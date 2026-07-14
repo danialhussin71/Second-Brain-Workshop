@@ -143,7 +143,7 @@ function VaultPanel({ open }: { open: boolean }) {
   return (
     <div data-lenis-prevent className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
       <p className="mb-4 max-w-xl text-[13px] leading-relaxed text-foreground/50">
-        Upload markdown notes or a zip of your Obsidian vault. They are chunked, embedded, and stored in Supabase so the AI brain can retrieve them.
+        Optional. Upload markdown or a vault zip to index in Supabase. Chat already works from the bundled <code className="text-foreground/70">content/knowledge</code> docs without Supabase.
       </p>
 
       <div className="mb-5 grid grid-cols-3 gap-3">

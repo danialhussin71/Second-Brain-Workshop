@@ -19,15 +19,14 @@
   node_bundler = "esbuild"
   included_files = ["content/knowledge/**"]
 
-# Template env vars — Netlify Deploy button / UI prompts for these.
-# Required for the AI Brain to answer + index uploads:
-#   AI_GATEWAY_API_KEY          (or ANTHROPIC_API_KEY)
-#   AI_MODEL                    (e.g. anthropic/claude-sonnet-4-6)
+# Template env vars
+# Required for AI Brain chat:
+#   AI_GATEWAY_API_KEY   (or ANTHROPIC_API_KEY)
+#   AI_MODEL             (e.g. anthropic/claude-sonnet-4-6)
+#   BRAIN_ENGINE=api
+# Optional — only for vault upload / brand kits (chat works without these):
 #   NEXT_PUBLIC_SUPABASE_URL
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY
 #   SUPABASE_SERVICE_ROLE_KEY
-# Optional but recommended for embeddings if gateway has no OpenAI route:
 #   OPENAI_API_KEY
-# Optional:
-#   BRAIN_ENGINE=api
 #   APP_URL=https://your-site.netlify.app

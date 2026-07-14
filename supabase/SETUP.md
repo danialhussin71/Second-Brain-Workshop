@@ -1,8 +1,12 @@
-# Supabase setup (AI Brain)
+# Supabase setup (OPTIONAL)
 
-Run these in the Supabase **SQL Editor** (in order) for a fresh project.
+Skip this if you only want AI Brain chat. The app answers from
+`content/knowledge/*` with just an LLM key — no database required.
 
-## Required for vault upload + search
+Use Supabase only when you want **vault upload** (custom markdown / Obsidian zip)
+or brand kits.
+
+## Required SQL for vault upload + search
 
 Paste the full contents of:
 
