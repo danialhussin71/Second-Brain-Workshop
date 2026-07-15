@@ -16,7 +16,7 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
   const [status, setStatus] = useState<Status | null>(null);
   const [notice, setNotice] = useState("");
   const vaultInput = useRef<HTMLInputElement>(null);
-  const load = useCallback(async () => { const response = await fetch("/api/brain"); if (response.ok) setStatus(await response.json()); }, []);
+  const load = useCallback(async () => { const response = await fetch("/api/brain", { cache: "no-store" }); if (response.ok) setStatus(await response.json()); }, []);
   useEffect(() => { if (open) void load(); }, [open, load]);
   async function upload(files: FileList | null) {
     if (!files?.length) return;

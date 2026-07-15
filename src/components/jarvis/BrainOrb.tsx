@@ -9,7 +9,7 @@ export default function BrainOrb() {
   const [graph, setGraph] = useState<Graph | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/brain").then((response) => response.ok ? response.json() : null).then((data) => {
+    fetch("/api/brain", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
       if (!cancelled) setGraph(data?.graph || null);
     }).catch(() => undefined);
     return () => { cancelled = true; };

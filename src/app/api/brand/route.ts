@@ -4,10 +4,17 @@ import { getBrandKit, saveBrandKit } from "@/lib/brand-kit";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+// Brand kit is stored on Blob and edited at runtime — keep this uncached so the
+// live app never serves a build-time (empty) snapshot. See api/brain/route.ts.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json({ connected: blobConfigured(), kit: await getBrandKit() });
+    return NextResponse.json(
+      { connected: blobConfigured(), kit: await getBrandKit() },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load brand kit." }, { status: 500 });
   }

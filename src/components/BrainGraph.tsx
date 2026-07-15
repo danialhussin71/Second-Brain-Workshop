@@ -1531,13 +1531,13 @@ export default function BrainGraph({
       {isEmpty && (
         <div className="flex h-full w-full items-center justify-center">
           <div className="max-w-sm px-4 text-center">
-            <div className="mb-1 text-sm font-medium text-zinc-300">Vault not synced</div>
+            <div className="mb-1 text-sm font-medium text-zinc-300">No brain uploaded yet</div>
             <div className="text-xs leading-relaxed text-zinc-500">
-              Run{" "}
-              <code className="rounded bg-white/5 px-1 py-0.5 text-accent-300">
-                node scripts/sync-to-blob.mjs
-              </code>{" "}
-              to upload your Obsidian vault.
+              Open{" "}
+              <span className="rounded bg-white/5 px-1 py-0.5 text-accent-300">
+                Settings → Second brain
+              </span>{" "}
+              and upload a markdown vault to light up your knowledge graph.
             </div>
           </div>
         </div>
