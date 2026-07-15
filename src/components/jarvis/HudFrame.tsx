@@ -53,7 +53,10 @@ export default function HudFrame({ children, actions }: { children: React.ReactN
 
       {/* top rail — identity left, utilities + time right */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-3 px-6 py-2.5">
-        <div className="flex items-baseline gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_0_20px_rgba(34,211,238,.12)]">
+            <img src="/brand/second-brain-icon.png" alt="" className="h-7 w-7 object-contain" />
+          </span>
           <span className="text-[15px] font-bold tracking-[0.3em] text-cyan-200">SECOND BRAIN</span>
         </div>
         <div className="flex items-center gap-3">

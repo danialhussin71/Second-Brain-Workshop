@@ -32,9 +32,10 @@ content/knowledge/owner/*.md
 !content/knowledge/owner/README.md
 
 
-# Nested reference checkout — not part of this app
+# Nested reference checkout ï¿½ not part of this app
 marketingos-main/
 
 # Electron packaging output
 dist-electron/
 
+.env*.local

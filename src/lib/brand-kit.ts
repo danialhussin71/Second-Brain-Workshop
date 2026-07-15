@@ -1,438 +1,234 @@
-/**
- * Brand kits — the founder's visual identity for generated assets.
- *
- * Storage (auto-detected):
- * 1. Vercel Blob — branding/{client}/kit.json + face/logo (preferred when token set)
- * 2. Supabase brand_kits + branding bucket (optional)
- * 3. Disk fallback for face_path / reference.png
- */
+import { blobConfigured, blobDel, blobGetBytes, blobGetText, blobPutBytes, blobPutText } from "./blob-store";
 
-import fs from "node:fs/promises";
-import path from "node:path";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { RefImage } from "./openai-image";
-import { NO_EMDASH_RULE } from "./sanitize";
-import {
-  blobConfigured,
-  blobGetBytes,
-  blobGetText,
-  blobPutBytes,
-  blobPutText,
-} from "./blob-store";
+export const BRAND_KIT_PATH = "owner/brand/kit.json";
+const BRAND_ASSET_PREFIX = "owner/brand/assets";
+
+export type BrandColor = {
+  id: string;
+  name: string;
+  hex: string;
+};
+
+export type BrandAsset = {
+  id: string;
+  kind: "face" | "logo" | "reference";
+  path: string;
+  name: string;
+  contentType: string;
+  updatedAt: string;
+};
 
 export type BrandKit = {
-  client: string;
-  displayName: string | null;
-  handle: string | null;
-  tagline: string | null;
-  accentHex: string;
-  styleSpec: string;
-  facePath: string | null;
-  faceUrl: string | null;
-  logoPath: string | null;
-  logoUrl: string | null;
-  fonts: string | null;
-};
-
-const isRealKey = (k?: string): k is string => !!k && /^(eyJ|sb_)/.test(k);
-function brandKey(): string | undefined {
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return isRealKey(service) ? service : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-}
-
-let _db: SupabaseClient | null = null;
-function brandDb(): SupabaseClient | null {
-  if (_db) return _db;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = brandKey();
-  if (!url || !key) return null;
-  _db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  return _db;
-}
-
-type Row = {
-  client: string;
-  display_name: string | null;
-  handle: string | null;
-  tagline: string | null;
-  accent_hex: string | null;
-  style_spec: string;
-  face_path: string | null;
-  face_url: string | null;
-  logo_path: string | null;
-  logo_url: string | null;
-  fonts: string | null;
-};
-
-const cache = new Map<string, { kit: BrandKit | null; at: number }>();
-const TTL = 60_000;
-
-function kitBlobPath(client: string) {
-  return `branding/${client}/kit.json`;
-}
-
-function assetBlobPath(client: string, kind: "face" | "logo", ext: string) {
-  return `branding/${client}/${kind}.${ext}`;
-}
-
-function rowToKit(r: Row): BrandKit {
-  return {
-    client: r.client,
-    displayName: r.display_name,
-    handle: r.handle,
-    tagline: r.tagline,
-    accentHex: r.accent_hex || "#ED1846",
-    styleSpec: r.style_spec || "",
-    facePath: r.face_path,
-    faceUrl: r.face_url,
-    logoPath: r.logo_path,
-    logoUrl: r.logo_url,
-    fonts: r.fonts,
-  };
-}
-
-async function readKitFromBlob(client: string): Promise<BrandKit | null> {
-  if (!blobConfigured()) return null;
-  const raw = await blobGetText(kitBlobPath(client));
-  if (!raw) return null;
-  try {
-    const r = JSON.parse(raw) as Row;
-    if (!r || r.client !== client) return null;
-    return rowToKit(r);
-  } catch {
-    return null;
-  }
-}
-
-async function writeKitToBlob(
-  client: string,
-  fields: BrandKitFields,
-  base?: BrandKit | null
-): Promise<boolean> {
-  const prev = base ?? (await readKitFromBlob(client));
-  const row: Row = {
-    client,
-    display_name: fields.display_name ?? prev?.displayName ?? null,
-    handle: fields.handle ?? prev?.handle ?? null,
-    tagline: fields.tagline ?? prev?.tagline ?? null,
-    accent_hex: fields.accent_hex ?? prev?.accentHex ?? "#ED1846",
-    style_spec: fields.style_spec ?? prev?.styleSpec ?? "",
-    face_path: fields.face_path ?? prev?.facePath ?? null,
-    face_url: fields.face_url ?? prev?.faceUrl ?? null,
-    logo_path: fields.logo_path ?? prev?.logoPath ?? null,
-    logo_url: fields.logo_url ?? prev?.logoUrl ?? null,
-    fonts: fields.fonts ?? prev?.fonts ?? null,
-  };
-  await blobPutText(kitBlobPath(client), JSON.stringify(row, null, 2), "application/json; charset=utf-8");
-  return true;
-}
-
-/** Load a client's brand kit (cached briefly). Returns null when none exists. */
-export async function getBrandKit(client: string): Promise<BrandKit | null> {
-  const hit = cache.get(client);
-  if (hit && Date.now() - hit.at < TTL) return hit.kit;
-
-  const fromBlob = await readKitFromBlob(client);
-  if (fromBlob) {
-    cache.set(client, { kit: fromBlob, at: Date.now() });
-    return fromBlob;
-  }
-
-  const db = brandDb();
-  if (!db) {
-    cache.set(client, { kit: null, at: Date.now() });
-    return null;
-  }
-  try {
-    const { data, error } = await db.from("brand_kits").select("*").eq("client", client).maybeSingle();
-    if (error || !data) {
-      cache.set(client, { kit: null, at: Date.now() });
-      return null;
-    }
-    const kit = rowToKit(data as Row);
-    cache.set(client, { kit, at: Date.now() });
-    return kit;
-  } catch {
-    return null;
-  }
-}
-
-/** Load the founder's face bytes — Blob path, then URL, then disk. */
-export async function loadBrandFace(kit: BrandKit): Promise<RefImage | null> {
-  if (kit.facePath) {
-    const fromBlob = await blobGetBytes(kit.facePath);
-    if (fromBlob) {
-      return { data: fromBlob.data, name: "face.png", type: fromBlob.contentType || "image/png" };
-    }
-  }
-  if (kit.faceUrl && !kit.faceUrl.startsWith("/")) {
-    try {
-      const res = await fetch(kit.faceUrl);
-      if (res.ok) {
-        return {
-          data: new Uint8Array(await res.arrayBuffer()),
-          name: "face.png",
-          type: res.headers.get("content-type") || "image/png",
-        };
-      }
-    } catch {
-      /* fall through */
-    }
-  }
-  if (kit.facePath && !kit.facePath.startsWith("branding/")) {
-    try {
-      const abs = path.isAbsolute(kit.facePath) ? kit.facePath : path.join(process.cwd(), kit.facePath);
-      const buf = await fs.readFile(abs);
-      return { data: new Uint8Array(buf), name: "face.png", type: "image/png" };
-    } catch {
-      /* no asset */
-    }
-  }
-  return null;
-}
-
-export async function loadBrandLogo(kit: BrandKit): Promise<RefImage | null> {
-  if (kit.logoPath) {
-    const fromBlob = await blobGetBytes(kit.logoPath);
-    if (fromBlob) {
-      return { data: fromBlob.data, name: "logo.png", type: fromBlob.contentType || "image/png" };
-    }
-  }
-  if (kit.logoUrl && !kit.logoUrl.startsWith("/")) {
-    try {
-      const res = await fetch(kit.logoUrl);
-      if (res.ok) {
-        return {
-          data: new Uint8Array(await res.arrayBuffer()),
-          name: "logo.png",
-          type: res.headers.get("content-type") || "image/png",
-        };
-      }
-    } catch {
-      /* fall through */
-    }
-  }
-  if (kit.logoPath && !kit.logoPath.startsWith("branding/")) {
-    try {
-      const abs = path.isAbsolute(kit.logoPath) ? kit.logoPath : path.join(process.cwd(), kit.logoPath);
-      const buf = await fs.readFile(abs);
-      return { data: new Uint8Array(buf), name: "logo.png", type: "image/png" };
-    } catch {
-      /* none */
-    }
-  }
-  return null;
-}
-
-/** Style-reference image: disk first, then Blob. */
-export async function loadBrandTemplate(client: string): Promise<RefImage | null> {
-  try {
-    const abs = path.join(process.cwd(), "content", "branding", client, "reference.png");
-    const buf = await fs.readFile(abs);
-    return { data: new Uint8Array(buf), name: "style-reference.png", type: "image/png" };
-  } catch {
-    /* try blob */
-  }
-  const fromBlob = await blobGetBytes(`branding/${client}/reference.png`);
-  if (fromBlob) {
-    return {
-      data: fromBlob.data,
-      name: "style-reference.png",
-      type: fromBlob.contentType || "image/png",
-    };
-  }
-  return null;
-}
-
-export type BrandKitFields = Partial<{
-  display_name: string;
+  version: 1;
+  displayName: string;
   handle: string;
   tagline: string;
-  accent_hex: string;
-  style_spec: string;
-  face_path: string;
-  face_url: string;
-  logo_path: string;
-  logo_url: string;
-  fonts: string;
+  website: string;
+  colors: BrandColor[];
+  headlineFont: string;
+  bodyFont: string;
+  voice: string;
+  vocabulary: string;
+  avoid: string;
+  styleSpec: string;
   notes: string;
-}>;
+  assets: {
+    face: BrandAsset | null;
+    logo: BrandAsset | null;
+    references: BrandAsset[];
+  };
+  updatedAt: string;
+};
 
-/** Upsert brand-kit fields. Blob preferred; Supabase optional mirror. */
-export async function saveBrandKit(client: string, fields: BrandKitFields): Promise<boolean> {
-  cache.delete(client);
+export type BrandReferenceImage = {
+  data: Uint8Array;
+  name: string;
+  type: string;
+  role: "founder-face" | "brand-logo" | "style-reference";
+};
 
-  if (blobConfigured()) {
-    try {
-      await writeKitToBlob(client, fields);
-      const db = brandDb();
-      if (db) {
-        await db.from("brand_kits").upsert({ client, ...fields }, { onConflict: "client" });
-      }
-      return true;
-    } catch (err) {
-      console.error("[brand-kit] blob save failed:", err);
-      return false;
-    }
-  }
+const ORIGINAL_STYLE_SPEC = `Premium high-contrast editorial carousel system. Use a near-black background with a restrained crimson radial glow and pure white typography. Crimson #ED1846 is the only accent colour. Headlines are large, heavy, condensed, and usually all caps; supporting copy uses a rounded geometric sans-serif with generous line spacing. Keep layouts spacious, cinematic, and immediately legible on a phone.
 
-  const db = brandDb();
-  if (!db) return false;
-  const { error } = await db.from("brand_kits").upsert({ client, ...fields }, { onConflict: "client" });
-  if (error) {
-    console.error("[brand-kit] save failed:", error.message);
-    return false;
-  }
-  return true;
+Recurring frame: a compact circular founder portrait at top-left, founder name and short tagline beside it, a small repost mark at top-right, and an unboxed slide number at bottom-right. Use the same placement across the deck. Cover and closing slides may use a photorealistic founder cutout as the hero. Body slides separate copy and imagery into deliberate regions; never dump text over a busy image. Product visuals should use accurate interfaces and official logos. Every slide must feel like one locked system rather than a new design.`;
+
+export const DEFAULT_BRAND_KIT: BrandKit = {
+  version: 1,
+  displayName: "Daniel Paul",
+  handle: "danielpaul",
+  tagline: "Building powerful personal brands with AI",
+  website: "",
+  colors: [
+    { id: "primary", name: "Brand crimson", hex: "#ED1846" },
+    { id: "ink", name: "Midnight", hex: "#080A10" },
+    { id: "surface", name: "Graphite", hex: "#171A24" },
+    { id: "text", name: "Pure white", hex: "#FFFFFF" },
+    { id: "muted", name: "Soft grey", hex: "#CFCFCF" },
+  ],
+  headlineFont: "Anton / Druk Condensed — heavy, condensed, all caps",
+  bodyFont: "Poppins — rounded geometric sans-serif",
+  voice: "Direct, warm, practical, and confident. Short sentences. Strong lived-experience point of view.",
+  vocabulary: "Use clear language, concrete examples, and decisive calls to action.",
+  avoid: "Avoid corporate filler, generic motivation, invented proof, and em dashes.",
+  styleSpec: ORIGINAL_STYLE_SPEC,
+  notes: "Imported from the original Second Brain brand system as an editable starting point.",
+  assets: { face: null, logo: null, references: [] },
+  updatedAt: "",
+};
+
+const cleanText = (value: unknown, fallback = "", max = 20_000) =>
+  typeof value === "string" ? value.trim().slice(0, max) : fallback;
+
+const cleanHex = (value: unknown, fallback: string) => {
+  const candidate = cleanText(value).toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(candidate) ? candidate : fallback;
+};
+
+function normalizeAsset(value: unknown, kind: BrandAsset["kind"]): BrandAsset | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<BrandAsset>;
+  if (!raw.path || !raw.id) return null;
+  return {
+    id: cleanText(raw.id, "", 120),
+    kind,
+    path: cleanText(raw.path, "", 300),
+    name: cleanText(raw.name, `${kind}.png`, 180),
+    contentType: cleanText(raw.contentType, "image/png", 80),
+    updatedAt: cleanText(raw.updatedAt, new Date().toISOString(), 80),
+  };
 }
 
-const BRANDING_BUCKET = "branding";
+export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_BRAND_KIT): BrandKit {
+  const raw = value && typeof value === "object" ? value as Partial<BrandKit> : {};
+  const incomingColors = Array.isArray(raw.colors) ? raw.colors : previous.colors;
+  const colors = incomingColors.slice(0, 8).map((color, index) => {
+    const fallback = previous.colors[index] || DEFAULT_BRAND_KIT.colors[index % DEFAULT_BRAND_KIT.colors.length];
+    return {
+      id: cleanText(color?.id, fallback.id, 40) || fallback.id,
+      name: cleanText(color?.name, fallback.name, 80) || fallback.name,
+      hex: cleanHex(color?.hex, fallback.hex),
+    };
+  });
+  while (colors.length < 5) colors.push({ ...DEFAULT_BRAND_KIT.colors[colors.length] });
+  const assets = raw.assets && typeof raw.assets === "object" ? raw.assets : previous.assets;
+  const references = Array.isArray(assets.references)
+    ? assets.references.map((item) => normalizeAsset(item, "reference")).filter((item): item is BrandAsset => !!item).slice(-4)
+    : previous.assets.references;
+  return {
+    version: 1,
+    displayName: cleanText(raw.displayName, previous.displayName, 120),
+    handle: cleanText(raw.handle, previous.handle, 120).replace(/^@/, ""),
+    tagline: cleanText(raw.tagline, previous.tagline, 240),
+    website: cleanText(raw.website, previous.website, 240),
+    colors,
+    headlineFont: cleanText(raw.headlineFont, previous.headlineFont, 300),
+    bodyFont: cleanText(raw.bodyFont, previous.bodyFont, 300),
+    voice: cleanText(raw.voice, previous.voice, 8_000),
+    vocabulary: cleanText(raw.vocabulary, previous.vocabulary, 8_000),
+    avoid: cleanText(raw.avoid, previous.avoid, 8_000),
+    styleSpec: cleanText(raw.styleSpec, previous.styleSpec, 20_000),
+    notes: cleanText(raw.notes, previous.notes, 8_000),
+    assets: {
+      face: normalizeAsset(assets.face, "face"),
+      logo: normalizeAsset(assets.logo, "logo"),
+      references,
+    },
+    updatedAt: cleanText(raw.updatedAt, previous.updatedAt, 80),
+  };
+}
 
-/** Upload face/logo to Blob (preferred) or Supabase Storage. */
-export async function saveBrandAsset(
-  client: string,
-  kind: "face" | "logo",
-  bytes: Uint8Array,
-  ext: string,
-  contentType?: string
-): Promise<string | null> {
-  const safeExt = (ext || "png").replace(/[^a-z0-9]/gi, "").toLowerCase() || "png";
-  const ct =
-    contentType ||
-    (safeExt === "jpg" || safeExt === "jpeg"
-      ? "image/jpeg"
-      : safeExt === "webp"
-        ? "image/webp"
-        : "image/png");
-
-  if (blobConfigured()) {
-    try {
-      const objectPath = assetBlobPath(client, kind, safeExt);
-      await blobPutBytes(objectPath, bytes, ct);
-      const proxyUrl = `/api/studio/brand/asset?kind=${kind}`;
-      await saveBrandKit(
-        client,
-        kind === "face"
-          ? { face_path: objectPath, face_url: proxyUrl }
-          : { logo_path: objectPath, logo_url: proxyUrl }
-      );
-      return proxyUrl;
-    } catch (err) {
-      console.error("[brand-kit] blob asset upload failed:", err);
-      return null;
-    }
-  }
-
-  const db = brandDb();
-  if (!db) return null;
+export async function getBrandKit(): Promise<BrandKit> {
+  if (!blobConfigured()) return DEFAULT_BRAND_KIT;
+  const raw = await blobGetText(BRAND_KIT_PATH);
+  if (!raw) return DEFAULT_BRAND_KIT;
   try {
-    const stamp = Date.now().toString(36) + Math.floor(performance.now()).toString(36);
-    const objectPath = `${client}/${kind}-${stamp}.${safeExt}`;
-    const { error: upErr } = await db.storage
-      .from(BRANDING_BUCKET)
-      .upload(objectPath, new Blob([bytes as unknown as BlobPart], { type: ct }), {
-        contentType: ct,
-        upsert: true,
-      });
-    if (upErr) throw upErr;
-    const url = db.storage.from(BRANDING_BUCKET).getPublicUrl(objectPath).data.publicUrl;
-    await saveBrandKit(client, kind === "face" ? { face_url: url } : { logo_url: url });
-    return url;
-  } catch (err) {
-    console.error("[brand-kit] asset upload failed:", err);
-    return null;
+    return normalizeBrandKit(JSON.parse(raw));
+  } catch {
+    return DEFAULT_BRAND_KIT;
   }
 }
 
-/** Resolve face/logo bytes for the asset GET proxy. */
-export async function loadBrandAssetBytes(
-  client: string,
-  kind: "face" | "logo"
-): Promise<{ data: Uint8Array; contentType: string } | null> {
-  const kit = await getBrandKit(client);
-  if (!kit) return null;
-  if (kind === "face") {
-    const img = await loadBrandFace(kit);
-    return img ? { data: img.data, contentType: img.type || "image/png" } : null;
-  }
-  const img = await loadBrandLogo(kit);
-  return img ? { data: img.data, contentType: img.type || "image/png" } : null;
+export async function saveBrandKit(value: unknown): Promise<BrandKit> {
+  if (!blobConfigured()) throw new Error("Connect Vercel Blob before saving a brand kit.");
+  const current = await getBrandKit();
+  const kit = normalizeBrandKit(value, current);
+  kit.updatedAt = new Date().toISOString();
+  await blobPutText(BRAND_KIT_PATH, JSON.stringify(kit, null, 2), "application/json; charset=utf-8");
+  return kit;
 }
 
-export type SlideRole = "cover" | "content" | "closing";
-
-export function slideRole(index: number, total: number): SlideRole {
-  if (index === 0) return "cover";
-  if (index === total - 1) return "closing";
-  return "content";
+export async function saveBrandAsset(kind: BrandAsset["kind"], file: File): Promise<BrandKit> {
+  if (!blobConfigured()) throw new Error("Connect Vercel Blob before uploading brand assets.");
+  const current = await getBrandKit();
+  const id = kind === "reference" ? crypto.randomUUID() : kind;
+  const path = `${BRAND_ASSET_PREFIX}/${kind}-${id}`;
+  const contentType = file.type || "image/png";
+  await blobPutBytes(path, new Uint8Array(await file.arrayBuffer()), contentType);
+  const asset: BrandAsset = { id, kind, path, name: file.name || `${kind}.png`, contentType, updatedAt: new Date().toISOString() };
+  if (kind === "face") current.assets.face = asset;
+  else if (kind === "logo") current.assets.logo = asset;
+  else {
+    current.assets.references = [...current.assets.references, asset].slice(-4);
+    const retained = new Set(current.assets.references.map((item) => item.path));
+    const stale = (await getBrandKit()).assets.references.filter((item) => !retained.has(item.path));
+    await Promise.all(stale.map((item) => blobDel(item.path)));
+  }
+  return saveBrandKit(current);
 }
 
-export type SlideLayout = "split" | "stacked" | "statement";
-
-export function brandCarouselSlidePrompt(args: {
-  kit: BrandKit;
-  index: number;
-  total: number;
-  role: SlideRole;
-  layout: SlideLayout;
-  title: string;
-  body: string;
-  visual: string;
-  logos: string[];
-  topic: string;
-  styleRef?: boolean;
-}): string {
-  const { kit, index, total, role, layout, title, body, visual, logos, topic, styleRef } = args;
-  const who = kit.displayName || "the founder";
-  const tagline = kit.tagline || "";
-  const accent = kit.accentHex;
-  const repeatable =
-    `REPEATABLE TEMPLATE ELEMENTS. These five elements form a FIXED template on a 1088x1360 portrait (4:5) canvas. Every one must render PIXEL-IDENTICALLY on EVERY slide: the same exact position, size, font, weight, colour and shape, with ONLY the slide-number digit changing. Reproduce each precisely, with zero creative variation and zero guesswork:\n` +
-    `1) AVATAR, top-left: a circular photo of ${who}, exactly 88px in diameter, inset 56px from the top edge and 56px from the left edge. ${who}'s head fills the circle; any backdrop behind the head is filled SOLID crimson ${accent} (never white, never transparent). A 3px solid crimson ${accent} ring outlines the circle.\n` +
-    `2) NAME, immediately to the right of the avatar with a 16px gap, top-aligned to the avatar: the exact text "${who}" at 32px, BOLD (weight 700), pure white #FFFFFF, in a rounded geometric sans-serif (Poppins).\n` +
-    (tagline
-      ? `3) TAGLINE, directly beneath the name with its left edge flush under the name: the exact text "${tagline}" at 18px, REGULAR (weight 400), light grey #CFCFCF, same Poppins sans-serif, wrapped to EXACTLY TWO lines (never one, never three), breaking at the same word on every slide.\n`
-      : "") +
-    `4) REPOST BADGE, top-right, its right edge inset 56px from the right edge and 56px from the top: a white repost / retweet icon (two arrows curving into a closed loop), 22px tall, immediately followed by the exact word "REPOST" at 24px, BOLD CONDENSED, pure white #FFFFFF, ALL-CAPS, in a heavy condensed grotesque (Druk / Anton).\n` +
-    `5) SLIDE NUMBER, bottom-right: the numeral "${index + 1}" ONLY (no leading zero, no slash, no total, no word, no symbol) at 48px, BOLD CONDENSED, pure white #FFFFFF, in the SAME heavy condensed grotesque as the headlines (Druk / Anton), with NO background, box, circle, pill or container behind it. Its baseline is inset exactly 56px from the bottom edge and its right edge 56px from the right edge. Across the deck only the digit changes; its size, font, weight, colour and position are identical on every slide.\n` +
-    `Treat all five as a LOCKED frame: do not move, resize, recolour, restyle, add to, or redesign any of them between slides.`;
-
-  let layoutLine: string;
-  if (role === "cover") {
-    layoutLine = `LAYOUT — HERO COVER (slide 1 of ${total}): ${who} as a photorealistic, background-removed CUTOUT on the RIGHT, confident, looking at camera (use his EXACT face/likeness from the reference). The big headline sits lower-left.`;
-  } else if (role === "closing") {
-    layoutLine = `LAYOUT — HERO CLOSING (slide ${total} of ${total}): ${who} as a photorealistic background-removed CUTOUT on the RIGHT (grey blazer over black tee, exact face from the reference). Big headline on the left, with a small crimson "FOLLOW" pill at the bottom-left.`;
-  } else if (layout === "split") {
-    layoutLine = `LAYOUT — SPLIT: headline + body text on the LEFT half; the MAIN VISUAL on the RIGHT half, in clearly SEPARATE regions (text must NEVER sit on top of the visual). If the visual is a product screenshot or app/website UI, render it inside a realistic modern iPHONE mockup: rounded corners, slim even bezels, the Dynamic Island pill at the top, in the phone's natural 9:19.5 portrait proportion (do NOT stretch it taller). Keep the phone COMPACT — its height should roughly match the left-hand text block and must NOT exceed about 70% of the slide height. If it would be taller, CROP the bottom of the phone at the slide's lower edge rather than stretching it, shrinking the screen content, or letting it run the full slide height.`;
-  } else if (layout === "statement") {
-    layoutLine = `LAYOUT — STATEMENT: a bold, mostly-text slide. Large headline and short body on the left, lots of negative space; keep any visual subtle and to the edge.`;
-  } else {
-    layoutLine = `LAYOUT — STACKED (three clean horizontal bands): 1) the headline at the TOP with the relevant logo/icon beside or just above it, 2) the body text full-width below it, 3) the MAIN VISUAL UNDERNEATH spanning the FULL width. If the visual is a product screenshot or app/website UI, render it inside a realistic DESKTOP BROWSER / laptop window mockup (full-width placement → browser/desktop). Text and visual never overlap.`;
+export async function removeBrandAsset(kind: BrandAsset["kind"], id?: string): Promise<BrandKit> {
+  const current = await getBrandKit();
+  let asset: BrandAsset | null = null;
+  if (kind === "face") { asset = current.assets.face; current.assets.face = null; }
+  else if (kind === "logo") { asset = current.assets.logo; current.assets.logo = null; }
+  else {
+    asset = current.assets.references.find((item) => item.id === id) || null;
+    current.assets.references = current.assets.references.filter((item) => item.id !== id);
   }
+  if (asset) await blobDel(asset.path);
+  return saveBrandKit(current);
+}
 
-  const logoLine = logos.length
-    ? `Render the OFFICIAL, accurate logos of ${logos.join(", ")} — each in a clean white rounded-square card with a soft shadow. Get the real brand marks right; do not invent or distort them.`
-    : "";
+export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
+  const kit = await getBrandKit();
+  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kit.assets.references.find((item) => item.id === id) || null;
+  if (!asset) return null;
+  const bytes = await blobGetBytes(asset.path);
+  return bytes ? { ...bytes, asset } : null;
+}
 
+export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]> {
+  const kit = await getBrandKit();
+  const entries: Array<{ asset: BrandAsset | null; role: BrandReferenceImage["role"] }> = [
+    { asset: kit.assets.face, role: "founder-face" },
+    { asset: kit.assets.logo, role: "brand-logo" },
+    ...kit.assets.references.map((asset) => ({ asset, role: "style-reference" as const })),
+  ];
+  const results = await Promise.all(entries.map(async ({ asset, role }) => {
+    if (!asset) return null;
+    const bytes = await blobGetBytes(asset.path);
+    return bytes ? { data: bytes.data, name: asset.name, type: bytes.contentType || asset.contentType, role } : null;
+  }));
+  return results.filter((item): item is BrandReferenceImage => !!item);
+}
+
+export function brandKitContext(kit: BrandKit): string {
   return [
-    kit.styleSpec,
-    "",
-    repeatable,
-    "",
-    styleRef
-      ? `STYLE REFERENCE IMAGE (attached): use it to lock ONLY three things to the founder's canonical carousel — (1) the HEADER (crimson-ringed avatar, name, two-line grey tagline, and the REPOST badge top-right), (2) the FOOTER slide NUMBER (bottom-right), and (3) the exact FONTS (the heavy condensed all-caps headline face and the rounded geometric sans body). Reproduce those three precisely. Do NOT copy anything else from the reference — not its headline, body text, background, imagery, logos or layout. Everything else follows the per-slide instructions below.`
-      : "",
-    layoutLine,
-    `Carousel topic: ${topic}.`,
-    `COLOUR PALETTE — use these EXACT colours, never a similar or shifted shade: the brand accent is crimson ${accent}, and it is the ONLY accent colour on the slide. Use ${accent} for the emphasised key word(s) in the headline, the avatar ring + circular backdrop, and any accent rule / pill / FOLLOW button. Everything else is pure white #FFFFFF (headline + body) or light grey #CFCFCF (the tagline). The background is near-black with a crimson ${accent} radial glow. Do NOT introduce any other accent hue (no orange, pink, blue, purple, or a lighter/darker/different red) — every accent must be EXACTLY ${accent}.`,
-    `HEADLINE (render VERBATIM in the condensed all-caps style): the non-emphasised words in pure white #FFFFFF and the key emphasised word(s) in EXACTLY the brand crimson ${accent} (never a different red): "${title}".`,
-    body ? `BODY text (white, short punchy lines, render verbatim): "${body}".` : "",
-    visual ? `MAIN VISUAL: ${visual}.` : "",
-    logoLine,
-    `DEVICE MOCKUP RULE: any on-screen UI / product screenshot shown at HALF width uses a modern iPHONE frame (rounded corners, slim bezels, Dynamic Island, natural 9:19.5 proportion) kept COMPACT at about 60-70% of the slide height — NOT full height; crop the phone's bottom at the slide edge if it would be taller, never stretch it. Any UI shown at FULL width uses a DESKTOP BROWSER / laptop window. Match the device to the placement.`,
-    `Use REAL, recognizable logos and product UIs, never generic, abstract or conceptual art (no random robots / 3D blobs).`,
-    `TEXT PUNCTUATION: ${NO_EMDASH_RULE}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `# Brand Kit: ${kit.displayName || "Unnamed brand"}`,
+    kit.handle ? `Handle: @${kit.handle}` : "",
+    kit.tagline ? `Tagline: ${kit.tagline}` : "",
+    kit.website ? `Website: ${kit.website}` : "",
+    `Palette: ${kit.colors.map((color) => `${color.name} ${color.hex}`).join(", ")}`,
+    `Headline typography: ${kit.headlineFont}`,
+    `Body typography: ${kit.bodyFont}`,
+    `Voice: ${kit.voice}`,
+    `Preferred language: ${kit.vocabulary}`,
+    `Avoid: ${kit.avoid}`,
+    `Locked visual system:\n${kit.styleSpec}`,
+    kit.notes ? `Additional notes: ${kit.notes}` : "",
+    `Available visual references: ${[
+      kit.assets.face ? "founder face" : "",
+      kit.assets.logo ? "logo" : "",
+      kit.assets.references.length ? `${kit.assets.references.length} style reference${kit.assets.references.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ") || "none uploaded"}.`,
+  ].filter(Boolean).join("\n\n");
 }

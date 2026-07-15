@@ -3,39 +3,8 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "installCommand": "npm install",
-  "env": {
-    "BRAIN_ENGINE": "api",
-    "AI_MODEL": "anthropic/claude-sonnet-4-6"
-  },
   "functions": {
-    "src/app/api/dashboard/data/route.ts": { "maxDuration": 180, "memory": 1024 },
-    "src/app/api/brain/route.ts": { "maxDuration": 30, "memory": 1024 },
-    "src/app/api/brain/search/route.ts": { "maxDuration": 30, "memory": 1024 },
     "src/app/api/brain/upload/route.ts": { "maxDuration": 300, "memory": 1024 },
-    "src/app/api/jarvis-code/run/route.ts": { "maxDuration": 120, "memory": 1024 },
-    "src/app/api/studio/docs/reembed/route.ts": { "maxDuration": 120, "memory": 1024 },
-    "src/app/api/carousel/image/route.ts": { "maxDuration": 120, "memory": 1024 }
-  },
-  "headers": [
-    {
-      "source": "/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
-      ]
-    },
-    {
-      "source": "/manifest.webmanifest",
-      "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" },
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
-      ]
-    },
-    {
-      "source": "/_next/static/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
-    }
-  ]
+    "src/app/api/jarvis/route.ts": { "maxDuration": 60, "memory": 1024 }
+  }
 }

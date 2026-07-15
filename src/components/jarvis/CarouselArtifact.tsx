@@ -6,6 +6,7 @@ import { AnimatePresence, motion, type PanInfo } from "motion/react";
 import { CaretLeft, CaretRight, Copy, Check, Sparkle, ArrowsOut, ArrowsIn, DownloadSimple, FilePdf, FileZip } from "@phosphor-icons/react";
 import { zipSync } from "fflate";
 import type { CarouselArtifactData } from "@/lib/jarvis-events";
+import { CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
 import { cn } from "@/lib/utils";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
@@ -36,15 +37,40 @@ const pad = (n: number) => String(n).padStart(2, "0");
 // re-render the whole deck) and de-duped while a request is in flight.
 const carouselImageCache = new Map<string, string>();
 const carouselInFlight = new Set<string>();
-const slideCacheKey = (topic: string, idx: number, title: string) => `${topic}::${idx}::${title}`;
+const slideCacheKey = (topic: string, idx: number, title: string, quality: CarouselImageQuality, brandRevision: number) => `${topic}::${idx}::${title}::${quality}::${brandRevision}`;
 
 export default function CarouselArtifact({ data }: { data: CarouselArtifactData }) {
   const [[i, dir], setPos] = useState<[number, number]>([0, 0]);
   const [copied, setCopied] = useState(false);
   const [full, setFull] = useState(false);
+  const [quality, setQuality] = useState<CarouselImageQuality>("high");
+  const [brandRevision, setBrandRevision] = useState(0);
   // client-rendered slide images (idx → data URL) + per-slide status
   const [genImages, setGenImages] = useState<Record<number, string>>({});
   const [genState, setGenState] = useState<Record<number, "loading" | "error">>({});
+
+  useEffect(() => {
+    const sync = () => setQuality(normalizeCarouselQuality(window.localStorage.getItem(CAROUSEL_QUALITY_KEY)));
+    sync();
+    window.addEventListener("jarvis-carousel-quality", sync);
+    return () => window.removeEventListener("jarvis-carousel-quality", sync);
+  }, []);
+
+  useEffect(() => {
+    const refreshBrand = () => {
+      carouselImageCache.clear();
+      setGenImages({});
+      setGenState({});
+      setBrandRevision(Date.now());
+    };
+    window.addEventListener("jarvis-brand-updated", refreshBrand);
+    return () => window.removeEventListener("jarvis-brand-updated", refreshBrand);
+  }, []);
+
+  useEffect(() => {
+    setGenImages({});
+    setGenState({});
+  }, [quality]);
 
   // merge any server image (rare now) with the client-generated ones
   const slides = useMemo(
@@ -60,7 +86,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
     async (idx: number) => {
       const s = data.slides[idx];
       if (!s || s.image) return;
-      const key = slideCacheKey(data.topic, idx, s.title);
+      const key = slideCacheKey(data.topic, idx, s.title, quality, brandRevision);
       const cached = carouselImageCache.get(key);
       if (cached) {
         setGenImages((p) => ({ ...p, [idx]: cached }));
@@ -80,6 +106,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
                 topic: data.topic,
                 total: data.slides.length,
                 styleBible: data.styleBible ?? "",
+                quality,
                 slide: { index: idx, kind: s.kind, title: s.title, body: s.body, layout: s.layout, visual: s.visual, logos: s.logos },
               }),
             });
@@ -100,14 +127,14 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
         carouselInFlight.delete(key);
       }
     },
-    [data]
+    [brandRevision, data, quality]
   );
 
   // Kick off generation for every slide missing an image (bounded concurrency).
   useEffect(() => {
     const needs = data.slides.map((_, idx) => idx).filter((idx) => {
       if (data.slides[idx].image) return false;
-      const cached = carouselImageCache.get(slideCacheKey(data.topic, idx, data.slides[idx].title));
+      const cached = carouselImageCache.get(slideCacheKey(data.topic, idx, data.slides[idx].title, quality, brandRevision));
       if (cached) {
         setGenImages((p) => (p[idx] ? p : { ...p, [idx]: cached }));
         return false;
@@ -115,14 +142,14 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
       return true;
     });
     if (!needs.length) return;
-    const CONC = 5;
+    const CONC = 2;
     let cursor = 0;
     const worker = async () => {
       while (cursor < needs.length) await genOne(needs[cursor++]);
     };
     Array.from({ length: Math.min(CONC, needs.length) }, () => worker());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, genOne]);
+  }, [brandRevision, data, genOne, quality]);
 
   const clamp = (v: number) => Math.min(n - 1, Math.max(0, v));
   const go = (d: number) => setPos(([p]) => [clamp(p + d), d]);

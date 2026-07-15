@@ -1,20 +1,9 @@
 import { NextResponse } from "next/server";
-import fs from "node:fs/promises";
 import path from "node:path";
-import { APP_CLIENT } from "@/lib/client";
 import { unzipBuffer } from "@/lib/unzip";
 import {
-  parseMarkdownNote,
-  upsertVaultNotes,
-  vaultBackendReady,
-  getVaultStats,
-  clearVault,
-  type ParsedNote,
-} from "@/lib/vault-supabase";
-import {
-  ownerKnowledgeWritable,
   saveOwnerNotes,
-  listOwnerNotes,
+  blobConfigured,
 } from "@/lib/owner-knowledge";
 
 export const runtime = "nodejs";
@@ -22,35 +11,13 @@ export const maxDuration = 300;
 
 /**
  * POST /api/brain/upload
- * Prefer Blob/disk BRAIN.md when available (Deploy button auto-provisions Blob).
- * Else Supabase vault. Last resort: USE_BROWSER_VAULT.
+ * Vercel Blob is the sole storage backend.
  */
 export async function POST(req: Request) {
   try {
-    const url = new URL(req.url);
-    const useSupabase = vaultBackendReady();
-    const useOwnerStore = ownerKnowledgeWritable();
-
-    if (url.searchParams.get("seed") === "1") {
-      if (!useSupabase) {
-        return NextResponse.json(
-          { ok: false, error: "Seed needs Supabase. Or just upload your own markdown." },
-          { status: 503 }
-        );
-      }
-      const result = await seedFromKnowledge();
-      const stats = await getVaultStats();
-      return NextResponse.json({ ok: true, ...result, stats, mode: "supabase" });
-    }
-
-    if (!useOwnerStore && !useSupabase) {
+    if (!blobConfigured()) {
       return NextResponse.json(
-        {
-          ok: false,
-          code: "USE_BROWSER_VAULT",
-          error:
-            "No Blob store on this project yet. Re-deploy with the Vercel button (creates Blob automatically), or run locally. Falling back to this browser.",
-        },
+        { ok: false, error: "Connect a Vercel Blob store to this project, then redeploy before uploading." },
         { status: 503 }
       );
     }
@@ -65,7 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "No files uploaded. Use field `files` or `file`." }, { status: 400 });
     }
 
-    const notes: ParsedNote[] = [];
+    const notes: Array<{ path: string; title: string; body: string }> = [];
     for (const file of files) {
       const name = file.name || "note.md";
       const buf = Buffer.from(await file.arrayBuffer());
@@ -77,11 +44,11 @@ export async function POST(req: Request) {
           if (!/\.(md|markdown|txt)$/i.test(e.path)) continue;
           if (e.path.includes("__MACOSX") || e.path.split("/").some((p) => p.startsWith("."))) continue;
           const rel = folderPrefix ? `${folderPrefix}/${e.path}` : e.path;
-          notes.push(parseMarkdownNote(rel, e.data.toString("utf8")));
+          notes.push(parseNote(rel, e.data.toString("utf8")));
         }
       } else if (/\.(md|markdown|txt)$/i.test(lower)) {
         const rel = folderPrefix ? `${folderPrefix}/${name}` : name;
-        notes.push(parseMarkdownNote(rel, buf.toString("utf8")));
+        notes.push(parseNote(rel, buf.toString("utf8")));
       }
     }
 
@@ -92,40 +59,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // Blob / local BRAIN.md first so uploads always land in Blob when provisioned.
-    if (useOwnerStore) {
-      const result = await saveOwnerNotes(
-        notes.map((n) => ({
-          filename: path.basename(n.path),
-          raw: `---\ntitle: ${JSON.stringify(n.title)}\n---\n\n${n.body}\n`,
-        }))
-      );
-      const owner = await listOwnerNotes();
-      return NextResponse.json({
-        ok: true,
-        mode: result.backend,
-        uploaded: notes.length,
-        replaced: true,
-        documents: result.documents,
-        chunks: result.documents,
-        path: result.path,
-        stats: { documents: owner.length, chunks: owner.length, folders: 1 },
-        client: "owner",
-      });
-    }
-
-    const cleared = await clearVault(APP_CLIENT);
-    const result = await upsertVaultNotes(notes, APP_CLIENT);
-    const stats = await getVaultStats();
+    const result = await saveOwnerNotes(notes.map((n) => ({ filename: n.path, raw: `---\ntitle: ${JSON.stringify(n.title)}\n---\n\n${n.body}\n` })));
     return NextResponse.json({
       ok: true,
-      mode: "supabase",
+      mode: "blob",
       uploaded: notes.length,
       replaced: true,
-      cleared,
-      ...result,
-      stats,
-      client: APP_CLIENT,
+      documents: result.documents,
+      path: result.path,
     });
   } catch (err) {
     console.error("[brain/upload]", err);
@@ -136,35 +77,8 @@ export async function POST(req: Request) {
   }
 }
 
-async function seedFromKnowledge() {
-  const root = path.join(process.cwd(), "content", "knowledge", APP_CLIENT);
-  const notes: ParsedNote[] = [];
-
-  async function walk(dir: string, base: string) {
-    let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name.startsWith(".")) continue;
-        await walk(full, base);
-      } else if (e.isFile() && /\.(md|markdown)$/i.test(e.name)) {
-        const raw = await fs.readFile(full, "utf8");
-        const rel = path.relative(base, full).replace(/\\/g, "/");
-        notes.push(parseMarkdownNote(rel, raw));
-      }
-    }
-  }
-
-  await walk(root, root);
-  if (!notes.length) {
-    throw new Error(`No markdown found under content/knowledge/${APP_CLIENT}`);
-  }
-  await clearVault(APP_CLIENT);
-  const result = await upsertVaultNotes(notes, APP_CLIENT);
-  return { seeded: notes.length, ...result, source: `content/knowledge/${APP_CLIENT}` };
+function parseNote(filePath: string, raw: string) {
+  const body = raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").trim();
+  const title = body.match(/^#\s+(.+)$/m)?.[1]?.trim() || path.basename(filePath).replace(/\.(md|markdown|txt)$/i, "");
+  return { path: filePath, title, body };
 }

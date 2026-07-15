@@ -1,181 +1,87 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import {
-  drainEvents,
-  type CarouselArtifactData,
-  type NewsletterArtifactData,
-  type JarvisEvent,
-  type JarvisNodeId,
-} from "@/lib/jarvis-events";
+import { drainEvents, type CarouselArtifactData, type JarvisEvent, type JarvisNodeId, type LongformArtifactData, type ReelArtifactData } from "@/lib/jarvis-events";
 import { node } from "@/lib/org";
-import { sounds } from "@/lib/sounds";
+import type { RichResponse } from "@/lib/rich-response";
 
-// Turn raw, technical tool names into human, on-brand phrasing for the feed.
-const TOOL_HUMAN: Record<string, string> = {
-  "gpt-image": "Generating the visuals",
-  "Second Brain": "Searching your second brain",
-  "Content guide": "Reading your playbook",
-  "Voice DNA": "Matching your voice",
+export type NodePhase = "idle" | "waking" | "working" | "reporting" | "done";
+export type FeedEntry = { id: number; node: JarvisNodeId; kind: "route" | "activate" | "status" | "tool" | "output" | "report"; text: string; at: number };
+export type JarvisRunState = {
+  running: boolean;
+  done: boolean;
+  instruction: string;
+  rationale?: string;
+  departments: JarvisNodeId[];
+  plan: JarvisNodeId[];
+  active?: JarvisNodeId;
+  litPath: JarvisNodeId[];
+  phases: Partial<Record<JarvisNodeId, NodePhase>>;
+  feed: FeedEntry[];
+  response?: RichResponse;
+  carouselArtifact?: CarouselArtifactData;
+  reelArtifact?: ReelArtifactData;
+  longformArtifact?: LongformArtifactData;
+  error?: string;
 };
-function humanizeTool(tool: string): string {
-  if (TOOL_HUMAN[tool]) return TOOL_HUMAN[tool];
-  const t = tool.toLowerCase();
-  if (t.includes("image")) return "Generating the visuals";
-  if (t.includes("web") || t.includes("search")) return "Searching the web";
-  if (t.includes("apify") || t.includes("scrap") || t.includes("lead")) return "Finding the right people";
-  if (t.includes("brain") || t.includes("vault")) return "Searching your second brain";
+
+const EMPTY: JarvisRunState = { running: false, done: false, instruction: "", departments: [], plan: [], litPath: [], phases: {}, feed: [] };
+
+function ancestors(id: JarvisNodeId): JarvisNodeId[] {
+  const path: JarvisNodeId[] = [id];
+  let parent = node(id).parent;
+  while (parent) { path.push(parent); parent = node(parent).parent; }
+  return path;
+}
+
+function toolLabel(tool: string): string {
+  if (/brain|vault/i.test(tool)) return "Reading your second brain";
+  if (/voice/i.test(tool)) return "Matching your voice";
   return tool;
 }
 
-// Subtle audio cues as events stream in. The frequent "message-level" events share
-// one throttle so a burst feels like a gentle patter, not a machine-gun.
-let lastTick = 0;
-function playEventSound(e: JarvisEvent) {
-  const throttled = (fn: () => void) => {
-    const now = Date.now();
-    if (now - lastTick < 110) return;
-    lastTick = now;
-    fn();
-  };
-  switch (e.type) {
-    case "route":
-      sounds.open();
-      break;
-    case "agent.activate":
-      throttled(sounds.switchAgent);
-      break;
-    case "agent.output":
-    case "agent.report":
-      throttled(sounds.message);
-      break;
-    case "artifact":
-      sounds.reply();
-      break;
-    case "response":
-      sounds.notify();
-      break;
-    case "run.complete":
-      sounds.complete();
-      break;
-    case "run.error":
-      sounds.error();
-      break;
-    default:
-      break;
-  }
-}
-
-export type NodePhase = "idle" | "waking" | "working" | "reporting" | "done";
-
-export type FeedEntry = {
-  id: number;
-  node: JarvisNodeId;
-  kind: "route" | "activate" | "status" | "tool" | "output" | "report";
-  text: string;
-  at: number;
-};
-
-export type JarvisRunState = {
-  running: boolean;
-  instruction: string;
-  rationale?: string;
-  department?: JarvisNodeId;
-  /** every department head KRONOS delegated to (team runs) */
-  departments?: JarvisNodeId[];
-  plan: JarvisNodeId[];
-  phases: Partial<Record<JarvisNodeId, NodePhase>>;
-  active?: JarvisNodeId;
-  /** active node + its ancestors — used to light the org-chart path */
-  litPath: JarvisNodeId[];
-  feed: FeedEntry[];
-  artifact?: CarouselArtifactData;
-  /** a complete on-brand HTML newsletter (light-themed email) */
-  newsletter?: NewsletterArtifactData;
-  /** a rich block-formatted report (markdown w/ block tokens) for non-carousel runs */
-  response?: string;
-  pulse: number;
-  error?: string;
-  done: boolean;
-};
-
-const EMPTY: JarvisRunState = {
-  running: false,
-  instruction: "",
-  plan: [],
-  phases: {},
-  litPath: [],
-  feed: [],
-  pulse: 0,
-  done: false,
-};
-
-function ancestors(id: JarvisNodeId): JarvisNodeId[] {
-  const out: JarvisNodeId[] = [id];
-  let cur = node(id).parent;
-  while (cur) {
-    out.push(cur);
-    cur = node(cur).parent;
-  }
-  return out;
-}
-
-/**
- * Pure reducer: fold one event into the run state. All merging happens here so a
- * burst of events arriving in one network chunk composes correctly (React runs
- * each setState updater against the accumulated state, never a stale snapshot).
- */
-function reduce(s: JarvisRunState, e: JarvisEvent, nextId: () => number): JarvisRunState {
-  const bump = (extra: Partial<JarvisRunState>, feed?: Omit<FeedEntry, "id">): JarvisRunState => ({
-    ...s,
-    ...extra,
-    pulse: s.pulse + 1,
-    feed: feed ? [...s.feed, { id: nextId(), ...feed }].slice(-60) : s.feed,
+function reduce(state: JarvisRunState, event: JarvisEvent, id: () => number): JarvisRunState {
+  const add = (next: Partial<JarvisRunState>, feed?: Omit<FeedEntry, "id">): JarvisRunState => ({
+    ...state,
+    ...next,
+    feed: feed ? [...state.feed, { id: id(), ...feed }].slice(-80) : state.feed,
   });
-
-  switch (e.type) {
-    case "run.start":
-      return s;
+  switch (event.type) {
+    case "run.start": return state;
     case "route": {
-      const departments = e.assignments.map((a) => a.department);
-      const plan = [...e.shared, ...e.assignments.flatMap((a) => a.plan)];
-      return bump(
-        { departments, department: departments[0], plan, rationale: e.rationale, active: "kronos", litPath: ["kronos"] },
-        { node: "kronos", kind: "route", text: e.rationale, at: e.at }
+      const departments = event.assignments.map((assignment) => assignment.department);
+      return add(
+        { rationale: event.rationale, departments, plan: [...event.shared, ...event.assignments.flatMap((assignment) => assignment.plan)], active: "kronos", litPath: ["kronos"] },
+        { node: "kronos", kind: "route", text: event.rationale, at: event.at }
       );
     }
-    case "agent.activate":
-      return bump(
-        { active: e.node, litPath: ancestors(e.node), phases: { ...s.phases, [e.node]: "working" } },
-        { node: e.node, kind: "activate", text: e.label, at: e.at }
-      );
-    case "agent.status":
-      return bump({ active: e.node }, { node: e.node, kind: "status", text: e.status, at: e.at });
-    case "agent.tool":
-      return bump({}, { node: e.node, kind: "tool", text: humanizeTool(e.tool) + (e.detail ? ` · ${e.detail}` : ""), at: e.at });
-    case "agent.output":
-      return bump(
-        { phases: { ...s.phases, [e.node]: "done" } },
-        { node: e.node, kind: "output", text: e.summary, at: e.at }
-      );
-    case "agent.report":
-      return bump(
-        { active: e.to, litPath: ancestors(e.from), phases: { ...s.phases, [e.from]: "done" } },
-        { node: e.from, kind: "report", text: `${node(e.from).title} → ${node(e.to).title}: ${e.summary}`, at: e.at }
-      );
-    case "artifact":
-      if (e.kind === "newsletter") return bump({ newsletter: e.data });
-      if (e.kind === "carousel") return bump({ artifact: e.data });
-      // leads / other kinds: no dedicated panel on the marketing org chart
-      return s;
-    case "response":
-      return bump({ response: e.markdown });
-    case "run.complete":
-      return bump({ running: false, done: true, active: "kronos", litPath: ["kronos"] });
-    case "run.error":
-      return bump({ running: false, error: e.message });
-    default:
-      return s;
+    case "agent.activate": return add(
+      { active: event.node, litPath: ancestors(event.node), phases: { ...state.phases, [event.node]: "working" } },
+      { node: event.node, kind: "activate", text: event.label, at: event.at }
+    );
+    case "agent.status": return add(
+      { active: event.node, litPath: ancestors(event.node) },
+      { node: event.node, kind: "status", text: event.status, at: event.at }
+    );
+    case "agent.tool": return add({}, { node: event.node, kind: "tool", text: `${toolLabel(event.tool)}${event.detail ? ` · ${event.detail}` : ""}`, at: event.at });
+    case "agent.output": return add(
+      { phases: { ...state.phases, [event.node]: "done" } },
+      { node: event.node, kind: "output", text: event.summary, at: event.at }
+    );
+    case "agent.report": return add(
+      { active: event.to, litPath: ancestors(event.from), phases: { ...state.phases, [event.from]: "done" } },
+      { node: event.from, kind: "report", text: `${node(event.from).title} → ${node(event.to).title}: ${event.summary}`, at: event.at }
+    );
+    case "artifact": {
+      if (event.kind === "carousel") return add({ carouselArtifact: event.data });
+      if (event.kind === "reel") return add({ reelArtifact: event.data });
+      if (event.kind === "longform") return add({ longformArtifact: event.data });
+      return state;
+    }
+    case "response": return add({ response: event.data });
+    case "run.complete": return add({ running: false, done: true, active: "kronos", litPath: ["kronos"], phases: { ...state.phases, kronos: "done" } });
+    case "run.error": return add({ running: false, error: event.message });
+    default: return state;
   }
 }
 
@@ -186,48 +92,33 @@ export function useJarvisRun() {
 
   const run = useCallback(async (instruction: string) => {
     abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-
+    const controller = new AbortController();
+    abortRef.current = controller;
     feedId.current = 0;
     const nextId = () => feedId.current++;
     setState({ ...EMPTY, running: true, instruction });
-    sounds.send(); // "sent" cue — a real user gesture, so it also unlocks Web Audio
-
     try {
-      const res = await fetch("/api/jarvis/run", {
+      const response = await fetch("/api/jarvis/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ instruction }),
-        signal: ac.signal,
+        signal: controller.signal,
       });
-      if (!res.body) throw new Error("no stream");
-      const reader = res.body.getReader();
+      if (!response.ok || !response.body) throw new Error(await response.text() || "Jarvis could not start.");
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
       for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const { events, rest } = drainEvents(buffer);
-        buffer = rest;
-        for (const e of events) {
-          setState((s) => reduce(s, e, nextId));
-          playEventSound(e);
-        }
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const drained = drainEvents(buffer);
+        buffer = drained.rest;
+        for (const event of drained.events) setState((current) => reduce(current, event, nextId));
       }
-    } catch (err) {
-      if (!ac.signal.aborted) {
-        setState((s) => ({ ...s, running: false, error: err instanceof Error ? err.message : String(err) }));
-      }
+    } catch (error) {
+      if (!controller.signal.aborted) setState((current) => ({ ...current, running: false, error: error instanceof Error ? error.message : String(error) }));
     }
   }, []);
-
-  const reset = useCallback(() => {
-    abortRef.current?.abort();
-    setState(EMPTY);
-  }, []);
-
-  return { state, run, reset };
+  return { state, run };
 }

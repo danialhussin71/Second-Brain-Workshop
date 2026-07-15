@@ -14,7 +14,6 @@
  */
 
 import type { JarvisNodeId, RouteAssignment } from "./jarvis-events";
-import type { AgentKey } from "./knowledge-map";
 
 export type OrgKind = "ceo" | "department" | "specialist" | "format";
 
@@ -30,7 +29,7 @@ export type OrgNode = {
   icon: string;
   parent: JarvisNodeId | null;
   /** For producers: which GTM agent config + knowledge scope it borrows. */
-  agentKey?: AgentKey;
+  agentKey?: string;
 };
 
 export const CEO_ID: JarvisNodeId = "kronos";
@@ -119,64 +118,37 @@ export type TeamPlan = {
 };
 
 /**
- * Deterministic keyword router — the fast, always-available fallback when the
- * LLM router is unavailable or returns something invalid. Marketing-only: every
- * instruction routes to the CMO, so the only real decision is which content FORMAT.
+ * Deterministic fallback when the CEO planner is unavailable. Knowledge questions
+ * go to Research only; strategy goes to the CMO; explicit production asks wake
+ * Content and the requested format.
  */
 export function keywordRoute(instruction: string): TeamPlan {
   const t = instruction.toLowerCase();
   const has = (...words: string[]) => words.some((w) => t.includes(w));
 
-  let format: JarvisNodeId = "text";
+  let format: JarvisNodeId | null = null;
   if (has("newsletter", "email newsletter", "broadcast", "email blast", "email campaign", "weekly email")) format = "newsletter";
-  else if (
-    has(
-      "carousel",
-      "slides",
-      "slide deck",
-      "swipe",
-      "cheatsheet",
-      "cheat sheet",
-      "listicle",
-      "deck",
-      "swipe post"
-    )
-  )
-    format = "carousel";
-  else if (
-    has(
-      "picture",
-      "image post",
-      "graphic",
-      "single image",
-      "generate image",
-      "generate an image",
-      "generate images",
-      "create an image",
-      "create image",
-      "dall-e",
-      "dalle",
-      "midjourney",
-      "canva",
-      "visual asset",
-      "designed asset",
-      "course profile"
-    )
-  )
-    // API brain renders visuals via the carousel pipeline (branded slides).
-    format = "carousel";
+  else if (has("carousel", "slides", "slide deck", "swipe", "cheatsheet", "cheat sheet", "listicle")) format = "carousel";
+  else if (has("picture", "image post", "graphic", "single image")) format = "picture";
   else if (has("reel", "short form", "short-form", "tiktok")) format = "reels";
   else if (has("long form", "long-form", "youtube", "video script", "vsl")) format = "longform";
-  // Bare "image" / "images" / "visual" (avoid matching "imaginative")
-  else if (/\b(images?|visuals?|artwork|poster)\b/i.test(t)) format = "carousel";
+  else if (has("text post", "linkedin post", "tweet", "thread", "write a post", "draft a post")) format = "text";
+
+  const asksStrategy = has("strategy", "campaign", "positioning", "messaging", "launch plan", "marketing plan", "go to market", "gtm");
+  const asksKnowledge = /^(what|who|why|how|where|when|tell me|summari[sz]e|explain|find|show me|do i|does my|is my)\b/.test(t) || has("my icp", "my audience", "my offer", "brand voice", "second brain");
+
+  if (!format && asksKnowledge && !asksStrategy) {
+    return { assignments: [], shared: ["research"], rationale: "Research reads the relevant knowledge and reports directly to the CEO." };
+  }
+
+  if (!format) {
+    return { assignments: [{ department: "cmo", plan: [] }], shared: ["research"], rationale: "The CMO turns the research into a marketing decision and action plan." };
+  }
 
   return {
     assignments: [{ department: "cmo", plan: [format] }],
     shared: ["research"],
-    rationale:
-      format === "text"
-        ? "Content writes a post in your voice."
-        : `Content writes the ${node(format).title.toLowerCase()}.`,
+    rationale: `Research sharpens the angle, then Content produces the ${node(format).title.toLowerCase()}.`,
   };
 }
 

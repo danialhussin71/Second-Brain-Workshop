@@ -71,7 +71,9 @@ export async function blobGetBytes(
   const auth = authOpts();
   try {
     const { get } = await import("@vercel/blob");
-    const result = await get(pathname, { access: "private", ...auth });
+    // Mutable app records (brain, brand kit) reuse stable paths. Private Blob
+    // reads default to CDN cache, so bypass it to guarantee read-after-write.
+    const result = await get(pathname, { access: "private", useCache: false, ...auth });
     if (!result || result.statusCode !== 200 || !result.stream) return null;
     const buf = Buffer.from(await new Response(result.stream).arrayBuffer());
     return {
@@ -85,7 +87,7 @@ export async function blobGetBytes(
       if (!info?.url) return null;
       const headers: HeadersInit = {};
       if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
-      const res = await fetch(info.url, { headers });
+      const res = await fetch(info.url, { headers, cache: "no-store" });
       if (!res.ok) return null;
       return {
         data: new Uint8Array(await res.arrayBuffer()),

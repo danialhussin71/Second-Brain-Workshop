@@ -11,6 +11,9 @@
  * department head.
  */
 
+import type { RichResponse } from "./rich-response";
+import { stripEmDashesDeep } from "./sanitize";
+
 export type JarvisNodeId =
   | "kronos"
   // department head (marketing-only build)
@@ -56,46 +59,74 @@ export type CarouselArtifactData = {
   styleBible?: string;
 };
 
+export type ReelBeat = {
+  timecode: string;
+  duration_seconds: number;
+  spoken: string;
+  visual: string;
+  onscreen_text: string;
+  edit: string;
+};
+
+export type ReelArtifactData = {
+  title: string;
+  platform: "Instagram Reels" | "TikTok" | "YouTube Shorts" | "LinkedIn video";
+  objective: string;
+  duration_seconds: number;
+  word_count: number;
+  hook: {
+    spoken: string;
+    visual: string;
+    onscreen_text: string;
+  };
+  beats: ReelBeat[];
+  cta: string;
+  caption: string;
+  production: {
+    delivery: string;
+    music: string;
+    captions: string;
+    shot_list: string[];
+  };
+  grounding: string[];
+};
+
+export type LongformChapter = {
+  n: number;
+  timecode: string;
+  title: string;
+  objective: string;
+  script: string;
+  visuals: string[];
+  retention_device: string;
+};
+
+export type LongformArtifactData = {
+  title: string;
+  format: "YouTube video" | "Video essay" | "Tutorial" | "Case study" | "Documentary" | "Talking head" | "VSL";
+  target_minutes: number;
+  estimated_words: number;
+  click_promise: string;
+  thumbnail: {
+    concept: string;
+    text: string;
+  };
+  intro: string;
+  payoff_map: string[];
+  chapters: LongformChapter[];
+  subscribe_line: string;
+  final_payoff: string;
+  watch_next_bridge: string;
+  production_notes: string[];
+  grounding: string[];
+};
+
 export type NewsletterArtifactData = {
   subject: string;
   preview: string;
   /** the complete, self-contained newsletter HTML — light-themed, in the founder's
    *  brand DNA, with any generated image assets inlined as data URLs */
   html: string;
-  grounding: string[];
-};
-
-/** Kept for optional CLI lead-scrape skills — not shown on the marketing org chart. */
-export type LeadEmailStatus = "valid" | "invalid" | "catch-all" | "disposable" | "unknown";
-export type LeadRow = {
-  name: string;
-  title: string;
-  company: string;
-  location: string;
-  linkedinUrl: string;
-  email: string;
-  emailStatus?: LeadEmailStatus;
-  headline?: string;
-  about?: string;
-  skills?: string[];
-  recentActivity?: string;
-};
-export type LeadsArtifactData = {
-  title: string;
-  icp: string;
-  criteria: string[];
-  qualification: string[];
-  leads: LeadRow[];
-  requested: number;
-  returned: number;
-  withEmail: number;
-  enriched?: number;
-  verifiedEmail?: number;
-  withActivity?: number;
-  phase?: "scraping" | "enriching" | "done";
-  testMode?: boolean;
-  configured: boolean;
-  note: string;
   grounding: string[];
 };
 
@@ -135,10 +166,11 @@ export type JarvisEvent =
     }
   /** The finished deliverable. */
   | { type: "artifact"; kind: "carousel"; data: CarouselArtifactData; at: number }
+  | { type: "artifact"; kind: "reel"; data: ReelArtifactData; at: number }
+  | { type: "artifact"; kind: "longform"; data: LongformArtifactData; at: number }
   | { type: "artifact"; kind: "newsletter"; data: NewsletterArtifactData; at: number }
-  | { type: "artifact"; kind: "leads"; data: LeadsArtifactData; at: number }
-  /** A rich, block-formatted report for the response panel (non-carousel runs). */
-  | { type: "response"; format: "blocks"; markdown: string; at: number }
+  /** Strict JSON from the CEO, rendered by the shared response-block stockpile. */
+  | { type: "response"; format: "blocks-json"; data: RichResponse; at: number }
   | { type: "run.complete"; at: number }
   | { type: "run.error"; message: string; at: number };
 
@@ -146,7 +178,7 @@ export type JarvisEventType = JarvisEvent["type"];
 
 /** Encode one event as a single NDJSON line. */
 export function encodeEvent(e: JarvisEvent): string {
-  return JSON.stringify(e) + "\n";
+  return JSON.stringify(stripEmDashesDeep(e)) + "\n";
 }
 
 /** Parse a buffered NDJSON chunk into events + the leftover partial line. */

@@ -1,124 +1,129 @@
-# AI Danny — Second Brain
+# Jarvis — Your Private Second Brain
 
-Talk to your notes from the `/jarvis-code` cockpit.
+Jarvis is a private, single-tenant **second brain and marketing operator** built on
+Next.js and Vercel Blob. You upload your own knowledge (notes, brand docs, an
+Obsidian vault), and Jarvis answers *only* from that material — then turns it into
+on-brand content in your own voice.
 
-**This deployable build uses the API brain** (`BRAIN_ENGINE=api`): Anthropic or
-Vercel AI Gateway — **no local Claude CLI required**. That is what runs on
-Vercel and Netlify.
+Everything lives on one screen at `/jarvis`: a chat, a live view of the AI org
+running your request, a graph of your uploaded brain, and a full Brand Studio.
 
-**Minimum to chat:** one LLM key. The app ships curated knowledge in
-`content/knowledge/*` and answers from that with no database.
+---
 
-```
-┌─────────────────┐   NDJSON    ┌──────────────────────┐
-│  /jarvis-code   │ ◀────────── │  /api/jarvis-code/run │
-│  (UI)           │             │  API brain            │
-└─────────────────┘             └──────────┬───────────┘
-                                           │
-                          ┌────────────────┼────────────────┐
-                          ▼                                 ▼
-                 content/knowledge/*              Supabase vault (optional)
-                 (always available)               upload + semantic search
-```
+## Deploy in one click
 
-## One-click deploy
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdanialhussin71%2FSecond-Brain-Workshop&env=OPENAI_API_KEY&envDescription=OpenAI%20API%20key%20that%20powers%20Jarvis%20chat%20and%20carousel%20image%20generation.&envLink=https%3A%2F%2Fplatform.openai.com%2Fapi-keys&project-name=second-brain-workshop&repository-name=second-brain-workshop&stores=%5B%7B%22type%22%3A%22blob%22%7D%5D)
 
-> Paste only your **LLM API key**. `BRAIN_ENGINE=api` is already the default.
-> On Vercel, the button also **creates a private Blob store** and injects
-> `BLOB_READ_WRITE_TOKEN` — you do **not** copy/paste a Blob token.
+The button does everything for you:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fdemo55oo%2Fai-second-brain&env=AI_GATEWAY_API_KEY&envDescription=Paste%20your%20Vercel%20AI%20Gateway%20key%20(or%20set%20ANTHROPIC_API_KEY%20after%20deploy).%20Blob%20storage%20is%20created%20automatically%20%E2%80%94%20do%20not%20paste%20a%20Blob%20token.&envLink=https%3A%2F%2Fgithub.com%2Fdemo55oo%2Fai-second-brain%23environment-variables&project-name=ai-second-brain&repository-name=ai-second-brain&stores=%5B%7B%22type%22%3A%22blob%22%2C%22access%22%3A%22private%22%7D%5D)
+1. **Clones the repo** into your own GitHub account.
+2. **Provisions a private Vercel Blob store** and connects it to the project —
+   this is where your brain, brand kit, and uploaded assets are stored durably.
+   Vercel injects the `BLOB_READ_WRITE_TOKEN` automatically; you never set it by hand.
+3. **Asks for one environment variable — `OPENAI_API_KEY`.** That is the only
+   secret you need to supply for a working deployment.
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/demo55oo/ai-second-brain)
+When the build finishes, open the deployment, go to `/jarvis`, and upload your
+first documents.
 
-After deploy, open **Environment variables** and paste `AI_GATEWAY_API_KEY` **or**
-`ANTHROPIC_API_KEY`. Blob (Vercel) is provisioned by the button — the app detects
-`BLOB_READ_WRITE_TOKEN` automatically for `/brain` uploads.
-
-**Already deployed without Blob?** In the Vercel project: **Storage → Create → Blob**
-(private) → connect to this project. The token is injected for you — still no paste
-into the app. Then redeploy.
-
-## Environment variables
+### Environment variables
 
 | Variable | Required | Purpose |
-|---|---|---|
-| `AI_GATEWAY_API_KEY` **or** `ANTHROPIC_API_KEY` | yes | Chat answers |
-| `AI_MODEL` | optional | Defaults internally; e.g. `anthropic/claude-sonnet-4-6` |
-| `BRAIN_ENGINE` | no | Defaults to `api` — do not set unless you want `cli` locally |
-| `BLOB_READ_WRITE_TOKEN` | auto on Vercel Deploy | Injected when Blob store is created — **do not paste manually**. Powers BRAIN.md, brand kit, and knowledge doc saves |
-| `NEXT_PUBLIC_SUPABASE_URL` | optional | Only if you prefer Supabase vault |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | optional | Only with Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | optional | Only with Supabase |
-| `OPENAI_API_KEY` | optional | Embeddings / direct OpenAI images. **Carousel slides also work with `AI_GATEWAY_API_KEY` alone** |
-| `APP_URL` | optional | Public site URL |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | **Yes** | Powers Jarvis chat, the marketing agents, and carousel image generation. |
+| `BLOB_READ_WRITE_TOKEN` | Auto | Injected by Vercel when the Blob store is connected. Do not set it manually. |
+| `OPENAI_MODEL` | Optional | Override the chat/reasoning model. Defaults to `gpt-5.6-sol` (medium reasoning). |
+| `OPENAI_IMAGE_MODEL` | Optional | Override the image model. Defaults to `gpt-image-2`. |
 
-Copy [`.env.example`](./.env.example) locally as `.env.local`.
+For the standard deployment, **`OPENAI_API_KEY` is all you add.** Everything else
+is provisioned or has a sensible default.
 
-## Optional: Supabase vault upload
+---
 
-Skip this entirely if you only want chat against the shipped knowledge docs.
+## What Jarvis does
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. In **SQL Editor**, run [`supabase/migrations/0007_vault_vectors.sql`](./supabase/migrations/0007_vault_vectors.sql).
-3. Paste URL + anon + service_role into your host env.
-4. In the app: gear → **Vault upload** → upload `.md` / `.zip` or seed.
+### 1. A private second brain
 
-See [`supabase/SETUP.md`](./supabase/SETUP.md).
+Open `/jarvis`, upload `.md`, `.txt`, or a `.zip` containing markdown (an exported
+Obsidian vault works well). Each upload **replaces** your previous brain and is
+merged into a single private Blob object (`owner/BRAIN.md`).
 
-## Local setup
+Jarvis answers grounded strictly in that material. If your notes don't support an
+answer, it says so and tells you which document would fill the gap — no
+hallucinated facts about your business.
+
+### 2. A visual brain graph
+
+Uploaded notes and their `[[wiki-links]]` are parsed into a force-directed graph
+so you can see how your knowledge connects, with node size scaled by how well
+each note is linked.
+
+### 3. A marketing OS that writes in your voice
+
+Behind the chat is a small AI org chart. You only ever talk to the **CEO**, which
+reads every document and routes your instruction to the **CMO**, who fires the
+right specialists:
+
+- **Research** — a shared specialist that reads market angles and trends up front.
+- **Content** — writes in your voice and picks the right **format**:
+  - **Text** posts
+  - **Picture** (single-image) posts
+  - **Carousel** swipe-through decks
+  - **Reels** short-form scripts
+  - **Long-form** video scripts
+  - **Newsletter** emails
+
+The live run streams into the UI so you can watch each agent contribute.
+
+### 4. Brand Studio (Settings → Brand Kit)
+
+A complete, Blob-backed identity system. Upload a founder portrait, a logo, and
+up to four visual references; define an exact colour palette, typography, voice
+DNA, language guardrails, and a locked visual style. You can also ask the model to
+**reverse-engineer your visual system** from the references you uploaded.
+
+The kit is fed into every marketing run so output stays on-brand. For carousels,
+your face, logo, and style references are sent to the image model's edit endpoint
+so the finished artwork actually reflects your assets — carousel image quality
+(Low / Medium / High) is a setting.
+
+---
+
+## Local development
+
+Local runs still need Blob credentials, because the brain and brand kit are stored
+on Blob.
 
 ```bash
 npm install
-cp .env.example .env.local   # fill AI_GATEWAY_API_KEY or ANTHROPIC_API_KEY
+
+# After connecting a Blob store to a Vercel project, pull its token locally:
+vercel env pull .env.local
+
+# Add your OpenAI key to .env.local:
+#   OPENAI_API_KEY=sk-...
+
 npm run dev
 ```
 
-Open <http://localhost:3000/jarvis-code> and ask a question. No Supabase needed.
+Then open http://localhost:3000 — the root redirects to `/jarvis`.
 
-### Your knowledge
+Other scripts:
 
-| Where you run | What happens on upload |
-|---|---|
-| Local (`npm run dev`) | Merged into `content/knowledge/owner/BRAIN.md` |
-| Vercel (Deploy button) | Blob store **auto-created**; one `owner/BRAIN.md` in Blob — token injected, no paste |
-| Vercel (no Blob yet) | Browser fallback until you add Storage → Blob (or re-clone with the button) |
-| Optional Supabase | Cloud vault + embeddings (`0007` SQL) |
-
-That single `BRAIN.md` (disk or Blob) is what the AI reads. Uploads replace Danny.
-
-## What works in this slim build
-
-| Feature | Status |
-|---|---|
-| AI Brain chat (`/jarvis-code`) | ✅ API engine — **no Supabase** |
-| Curated knowledge docs | ✅ `content/knowledge/*` |
-| Owner BRAIN.md (merged uploads) | ✅ local disk or Vercel Blob |
-| Browser vault (no Blob) | ✅ IndexedDB fallback |
-| Vault upload + semantic search | ⚪ optional (Supabase + `0007` SQL) |
-| Brand kit settings | ⚪ optional (Supabase brand_kits) |
-| Claude Code CLI / MCP / LinkedIn / Apify | ⏸ optional local only (`BRAIN_ENGINE=cli`) |
-
-## Project layout
-
-```
-src/app/jarvis-code/       cockpit UI
-src/app/api/brain/         graph, search, upload
-src/app/api/jarvis-code/   run (API brain + optional CLI)
-src/lib/api-brain.ts       deployable LLM path
-src/lib/client-knowledge.ts curated docs (no DB)
-src/lib/vault-supabase.ts  optional ingest + match_vault_chunks
-supabase/migrations/       optional SQL schema
-content/knowledge/         seed markdown (works offline)
+```bash
+npm run build      # production build
+npm start          # run the production build
+npm run typecheck  # tsc --noEmit
 ```
 
-## Cost notes
+See [`.env.example`](./.env.example) for the full list of variables.
 
-- Chat bills against Anthropic or your AI Gateway plan.
-- Embeddings only matter if you enable vault upload.
+---
 
-## Desktop / Claude CLI (optional)
+## Stack
 
-The old subscription-based Claude Code spawn still exists. Set `BRAIN_ENGINE=cli`,
-install the Claude Code CLI, and see [DESKTOP.md](./DESKTOP.md). That path
-**does not** run on serverless.
+- **Next.js 15** (App Router, React 19) on the Vercel runtime
+- **Vercel Blob** for durable, private storage of the brain, brand kit, and assets
+- **OpenAI Responses API** (`gpt-5.6-sol`) for reasoning and content
+- **GPT Image 2** (`gpt-image-2`) for on-brand carousel artwork
+- **d3-force** for the brain graph, **Tailwind CSS** + **Motion** for the UI
