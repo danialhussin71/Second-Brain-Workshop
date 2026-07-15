@@ -8,10 +8,13 @@ import {
   type JarvisEvent,
   type JarvisNodeId,
   type LongformArtifactData,
+  type PicturePostArtifactData,
   type ReelArtifactData,
+  type TextPostArtifactData,
 } from "@/lib/jarvis-events";
 import { RICH_RESPONSE_SCHEMA, type RichResponse } from "@/lib/rich-response";
 import { brandKitContext, getBrandKit } from "@/lib/brand-kit";
+import { STYLE_PRESETS } from "@/lib/post-image";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -195,6 +198,40 @@ const LONGFORM_SCHEMA = {
     final_payoff: { type: "string" },
     watch_next_bridge: { type: "string" },
     production_notes: { type: "array", items: { type: "string" } },
+    grounding: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+const TEXTPOST_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["platform", "angle", "hook", "body", "cta", "hashtags", "alt_hooks", "grounding"],
+  properties: {
+    platform: { type: "string", enum: ["LinkedIn", "X", "Instagram", "Threads", "Facebook"] },
+    angle: { type: "string", enum: ["standard", "story", "framework", "contrarian"] },
+    hook: { type: "string" },
+    body: { type: "string" },
+    cta: { type: "string" },
+    hashtags: { type: "array", items: { type: "string" }, maxItems: 6 },
+    alt_hooks: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 3 },
+    grounding: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+const PICTUREPOST_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["platform", "aspect", "style", "concept", "image_prompt", "on_image_text", "caption", "cta", "hashtags", "grounding"],
+  properties: {
+    platform: { type: "string", enum: ["Instagram", "LinkedIn", "Facebook", "X"] },
+    aspect: { type: "string", enum: ["square", "portrait", "landscape"] },
+    style: { type: "string", enum: Object.keys(STYLE_PRESETS) },
+    concept: { type: "string" },
+    image_prompt: { type: "string" },
+    on_image_text: { type: "string" },
+    caption: { type: "string" },
+    cta: { type: "string" },
+    hashtags: { type: "array", items: { type: "string" }, maxItems: 6 },
     grounding: { type: "array", items: { type: "string" } },
   },
 } as const;
@@ -484,6 +521,81 @@ async function runLongform(
   };
 }
 
+const POST_ANGLE_GUIDE: Record<TextPostArtifactData["angle"], string> = {
+  standard: "A high-performing post with a strong hook, short punchy lines, and one clear takeaway.",
+  story: "A vulnerable narrative: hook, tension, a turning point, and the lesson.",
+  framework: "A save-worthy, numbered framework or list post with a clean structure.",
+  contrarian: "A bold contrarian take that challenges conventional wisdom, punchy and specific.",
+};
+
+async function runTextPost(
+  instruction: string,
+  notes: OwnerNote[],
+  research: Contribution | undefined,
+  emit: Emit,
+  signal: AbortSignal
+): Promise<Contribution> {
+  emit({ type: "agent.activate", node: "text", label: "Text post writer is online", at: now() });
+  emit({ type: "agent.status", node: "text", status: "Auditioning hooks in the founder's voice", at: now() });
+  const guide = await getContentGuide({ format: "text", task: `${instruction}\n${research?.output || ""}` });
+  if (guide) emit({ type: "agent.tool", node: "text", tool: "Content guide", detail: guide.title, at: now() });
+  emit({ type: "agent.tool", node: "text", tool: "Voice DNA", detail: "Uploaded brand and knowledge notes", at: now() });
+  const artifact = await openAIJson<TextPostArtifactData>({
+    name: "text_post",
+    schema: TEXTPOST_SCHEMA,
+    signal,
+    maxOutputTokens: 9000,
+    instructions:
+      "You are the founder's elite ghostwriter. Write ONLY in their documented voice, grounded strictly in the second brain and brand kit. " +
+      "Silently audition five opening lines, then commit to the strongest. Pick the single best angle for the request: " +
+      Object.entries(POST_ANGLE_GUIDE).map(([key, guideText]) => `${key} (${guideText})`).join("; ") + ". " +
+      "hook must be a scroll-stopping opening line, ideally under twelve words, and must be the exact first line of body. " +
+      "body is the complete, ready-to-paste post with real line breaks. Short, punchy lines with white space. Do not put hashtags inside body. " +
+      "No emojis unless the founder's voice clearly uses them. No hashtags unless requested. Never invent facts, metrics, quotes, or client stories. " +
+      "cta is the closing engagement prompt. alt_hooks gives two or three alternative opening lines. hashtags omit the leading #. grounding may contain only exact supplied note titles.\n\n" +
+      (guide ? `AUTHORITATIVE POST PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
+    input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
+  });
+  emit({ type: "artifact", kind: "text", data: artifact, at: now() });
+  emit({ type: "agent.output", node: "text", summary: `${artifact.platform} ${artifact.angle} post ready`, at: now() });
+  emit({ type: "agent.report", from: "text", to: "content", summary: "Text post delivered", at: now() });
+  return { agent: "text", title: artifact.hook, summary: `${artifact.platform} post ready`, output: artifact.body, source_titles: artifact.grounding };
+}
+
+async function runPicturePost(
+  instruction: string,
+  notes: OwnerNote[],
+  research: Contribution | undefined,
+  emit: Emit,
+  signal: AbortSignal
+): Promise<Contribution> {
+  emit({ type: "agent.activate", node: "picture", label: "Single-image post producer is online", at: now() });
+  emit({ type: "agent.status", node: "picture", status: "Art-directing the visual and writing the caption", at: now() });
+  const guide = await getContentGuide({ format: "picture", task: `${instruction}\n${research?.output || ""}` });
+  if (guide) emit({ type: "agent.tool", node: "picture", tool: "Content guide", detail: guide.title, at: now() });
+  emit({ type: "agent.tool", node: "picture", tool: "Voice DNA", detail: "Uploaded brand and knowledge notes", at: now() });
+  const styleList = Object.entries(STYLE_PRESETS).map(([key, spec]) => `${key} (${spec.hint})`).join("; ");
+  const artifact = await openAIJson<PicturePostArtifactData>({
+    name: "picture_post",
+    schema: PICTUREPOST_SCHEMA,
+    signal,
+    maxOutputTokens: 9000,
+    instructions:
+      "You are the founder's senior social art director and caption writer. Design one finished single-image post. " +
+      `Choose the best style preset for the message from: ${styleList}. Choose aspect square, portrait, or landscape to fit the platform. ` +
+      "concept is one vivid sentence describing the visual. image_prompt is a complete, self-contained prompt for a photorealistic image model: describe subject, setting, lighting, mood, and composition. Do not ask it to leave space for overlays. " +
+      "The founder's real portrait, logo, and brand references from the brand kit are supplied to the image model automatically, so when a person is central, write the subject as the real founder and rely on the identity lock. " +
+      "on_image_text is a short two-to-six word phrase to render on the image, or an empty string for a clean photo. " +
+      "caption is the posting caption in the founder's voice, ending with cta. hashtags omit the leading #. Never invent facts. grounding may contain only exact supplied note titles.\n\n" +
+      (guide ? `AUTHORITATIVE PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
+    input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
+  });
+  emit({ type: "artifact", kind: "picture", data: artifact, at: now() });
+  emit({ type: "agent.output", node: "picture", summary: `${artifact.platform} image post ready`, at: now() });
+  emit({ type: "agent.report", from: "picture", to: "content", summary: "Single-image post delivered", at: now() });
+  return { agent: "picture", title: artifact.concept, summary: `${artifact.platform} image post ready`, output: `${artifact.concept}\n\nCaption:\n${artifact.caption}`, source_titles: artifact.grounding };
+}
+
 async function runFormat(
   format: ContentFormat,
   instruction: string,
@@ -492,6 +604,8 @@ async function runFormat(
   emit: Emit,
   signal: AbortSignal
 ): Promise<Contribution> {
+  if (format === "text") return runTextPost(instruction, notes, research, emit, signal);
+  if (format === "picture") return runPicturePost(instruction, notes, research, emit, signal);
   if (format === "carousel") return runCarousel(instruction, notes, research, emit, signal);
   if (format === "reels") return runReel(instruction, notes, research, emit, signal);
   if (format === "longform") return runLongform(instruction, notes, research, emit, signal);
@@ -592,7 +706,7 @@ export async function POST(request: Request) {
         }
 
         const onlyFormat = plan.assignments.length === 1 && plan.assignments[0].plan.length === 1 ? plan.assignments[0].plan[0] : null;
-        const dedicatedArtifactOnly = onlyFormat === "carousel" || onlyFormat === "reels" || onlyFormat === "longform";
+        const dedicatedArtifactOnly = onlyFormat === "carousel" || onlyFormat === "reels" || onlyFormat === "longform" || onlyFormat === "text" || onlyFormat === "picture";
         if (!dedicatedArtifactOnly) {
           emit({ type: "agent.status", node: "kronos", status: "Assembling the final briefing", at: now() });
           const response = await synthesize(text, plan, contributions, request.signal);

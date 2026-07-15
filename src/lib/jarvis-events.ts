@@ -130,6 +130,44 @@ export type NewsletterArtifactData = {
   grounding: string[];
 };
 
+/** A finished, ready-to-publish text post written in the founder's voice. */
+export type TextPostArtifactData = {
+  platform: "LinkedIn" | "X" | "Instagram" | "Threads" | "Facebook";
+  /** the ghostwriting frame used — mirrors FounderOS post formats */
+  angle: "standard" | "story" | "framework" | "contrarian";
+  /** the scroll-stopping opening line (also the first line of `body`) */
+  hook: string;
+  /** the complete post text, ready to paste, hook included, line breaks preserved */
+  body: string;
+  /** the closing call to action / engagement prompt (may be folded into body) */
+  cta: string;
+  /** optional hashtags, without the leading # */
+  hashtags: string[];
+  /** two or three alternative opening hooks the founder can swap in */
+  alt_hooks: string[];
+  grounding: string[];
+};
+
+/** A finished single-image ("picture") post: art-directed image brief + caption. */
+export type PicturePostArtifactData = {
+  platform: "Instagram" | "LinkedIn" | "Facebook" | "X";
+  aspect: "square" | "portrait" | "landscape";
+  /** style preset label, e.g. "Editorial", "Hyper-realistic", "Brand graphic" */
+  style: string;
+  /** one-line description of the visual concept */
+  concept: string;
+  /** the complete, self-contained prompt handed to the image model */
+  image_prompt: string;
+  /** optional short text to render inside the image ("" if none) */
+  on_image_text: string;
+  /** the posting caption in the founder's voice */
+  caption: string;
+  /** the closing call to action */
+  cta: string;
+  hashtags: string[];
+  grounding: string[];
+};
+
 export type JarvisEvent =
   | { type: "run.start"; runId: string; instruction: string; at: number }
   /** KRONOS has read the intent and delegated to one or more department heads. */
@@ -169,6 +207,8 @@ export type JarvisEvent =
   | { type: "artifact"; kind: "reel"; data: ReelArtifactData; at: number }
   | { type: "artifact"; kind: "longform"; data: LongformArtifactData; at: number }
   | { type: "artifact"; kind: "newsletter"; data: NewsletterArtifactData; at: number }
+  | { type: "artifact"; kind: "text"; data: TextPostArtifactData; at: number }
+  | { type: "artifact"; kind: "picture"; data: PicturePostArtifactData; at: number }
   /** Strict JSON from the CEO, rendered by the shared response-block stockpile. */
   | { type: "response"; format: "blocks-json"; data: RichResponse; at: number }
   | { type: "run.complete"; at: number }
