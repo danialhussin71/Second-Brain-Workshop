@@ -140,13 +140,15 @@ class ScriptPdf {
   ): number {
     const value = safeText(label).toUpperCase();
     const size = opts.size ?? 7;
-    const padX = 7;
-    const h = size + 8.5;
+    const padX = 8;
+    const h = size + 9;
     const w = this.textW(value, this.bold, size) + padX * 2;
     this.roundRect(left, centerY + h / 2, w, h, { fill: opts.fill, border: opts.border, borderWidth: 0.8, radius: h / 2 });
+    // Vertically center the all-caps label on centerY: baseline sits half a cap
+    // height below center (Helvetica cap height ~= 0.72 of the point size).
     this.page.drawText(value, {
       x: left + padX,
-      y: centerY - size / 2 + 1.2,
+      y: centerY - size * 0.36,
       size,
       font: this.bold,
       color: this.color(opts.text ?? COLORS.white),
