@@ -9,6 +9,28 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+// Text formats we ingest as knowledge notes. Kept broad on purpose: an
+// exported vault often mixes markdown with plain notes and CSV context files.
+const TEXT_FILE = /\.(md|markdown|mdx|txt|text|csv)$/i;
+
+/** Skip macOS resource forks, dotfiles, and dot-folders like .obsidian. */
+function isJunk(entryPath: string): boolean {
+  return entryPath.includes("__MACOSX") || entryPath.split("/").some((seg) => seg.startsWith("."));
+}
+
+/**
+ * Vault zips are usually wrapped in one root folder ("Malik Brain/..."). Strip a
+ * shared leading segment so folders read as "Wiki" / "Raw" instead of
+ * "Malik Brain/Wiki", which keeps the knowledge graph clean.
+ */
+function stripCommonRoot(paths: string[]): (p: string) => string {
+  const withFolder = paths.filter((p) => p.includes("/"));
+  if (withFolder.length < 2) return (p) => p;
+  const firstSeg = withFolder[0].split("/")[0];
+  const shared = paths.every((p) => !p.includes("/") || p.split("/")[0] === firstSeg);
+  return shared ? (p) => (p.startsWith(`${firstSeg}/`) ? p.slice(firstSeg.length + 1) : p) : (p) => p;
+}
+
 /**
  * POST /api/brain/upload
  * Vercel Blob is the sole storage backend.
@@ -40,13 +62,14 @@ export async function POST(req: Request) {
 
       if (lower.endsWith(".zip")) {
         const entries = await unzipBuffer(buf);
-        for (const e of entries) {
-          if (!/\.(md|markdown|txt)$/i.test(e.path)) continue;
-          if (e.path.includes("__MACOSX") || e.path.split("/").some((p) => p.startsWith("."))) continue;
-          const rel = folderPrefix ? `${folderPrefix}/${e.path}` : e.path;
+        const usable = entries.filter((e) => TEXT_FILE.test(e.path) && !isJunk(e.path));
+        const rootless = stripCommonRoot(usable.map((e) => e.path));
+        for (const e of usable) {
+          const clean = rootless(e.path);
+          const rel = folderPrefix ? `${folderPrefix}/${clean}` : clean;
           notes.push(parseNote(rel, e.data.toString("utf8")));
         }
-      } else if (/\.(md|markdown|txt)$/i.test(lower)) {
+      } else if (TEXT_FILE.test(lower)) {
         const rel = folderPrefix ? `${folderPrefix}/${name}` : name;
         notes.push(parseNote(rel, buf.toString("utf8")));
       }
@@ -54,7 +77,7 @@ export async function POST(req: Request) {
 
     if (!notes.length) {
       return NextResponse.json(
-        { ok: false, error: "No markdown notes found. Send .md files or a .zip of them." },
+        { ok: false, error: "No readable notes found. Upload .md, .markdown, .txt, or .csv files, or a .zip of them (Obsidian vault exports work)." },
         { status: 400 }
       );
     }
@@ -79,6 +102,6 @@ export async function POST(req: Request) {
 
 function parseNote(filePath: string, raw: string) {
   const body = raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "").trim();
-  const title = body.match(/^#\s+(.+)$/m)?.[1]?.trim() || path.basename(filePath).replace(/\.(md|markdown|txt)$/i, "");
+  const title = body.match(/^#\s+(.+)$/m)?.[1]?.trim() || path.basename(filePath).replace(TEXT_FILE, "");
   return { path: filePath, title, body };
 }

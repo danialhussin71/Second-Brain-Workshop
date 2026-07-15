@@ -320,7 +320,7 @@ class ScriptPdf {
       return { label, accent, tint, labelChipW, bodyLines };
     });
     const detailsH = measured.reduce((sum, d) => sum + Math.max(15, d.bodyLines.length * 11.5 + 5), 0);
-    const height = 24 + spokenLines.length * 15.5 + 8 + detailsH + 12;
+    const height = 32 + spokenLines.length * 15.5 + 8 + detailsH + 12;
     this.ensure(height + 10);
     const top = this.y;
     const bottom = top - height;
@@ -335,7 +335,7 @@ class ScriptPdf {
     this.page.drawText(idx, { x: PAGE.width - PAGE.margin - padX - this.textW(idx, this.bold, 8), y: top - 18, size: 8, font: this.bold, color: this.color(COLORS.faint) });
 
     // Spoken copy.
-    let lineY = top - 32;
+    let lineY = top - 40;
     for (const line of spokenLines) {
       this.page.drawText(line, { x: PAGE.margin + padX, y: lineY, size: 11, font: this.regular, color: this.color(COLORS.ink) });
       lineY -= 15.5;
