@@ -142,8 +142,8 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
 
   if (!kit || busy === "load") return <div className="grid min-h-[420px] place-items-center"><CircleNotch size={24} className="animate-spin text-fuchsia-300" /></div>;
 
-  const accent = kit.colors[0]?.hex || "#ED1846";
-  const ink = kit.colors[1]?.hex || "#080A10";
+  const accent = kit.colors[0]?.hex || "#5B677A";
+  const ink = kit.colors[1]?.hex || "#0B0C10";
 
   return <div className="space-y-5 pb-20">
     <section className="relative overflow-hidden rounded-3xl border border-fuchsia-300/20 bg-[linear-gradient(135deg,rgba(217,70,239,.1),rgba(34,211,238,.03)_55%,rgba(255,255,255,.02))] p-5">

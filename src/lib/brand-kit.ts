@@ -47,30 +47,32 @@ export type BrandReferenceImage = {
   role: "founder-face" | "brand-logo" | "style-reference";
 };
 
-const ORIGINAL_STYLE_SPEC = `Premium high-contrast editorial carousel system. Use a near-black background with a restrained crimson radial glow and pure white typography. Crimson #ED1846 is the only accent colour. Headlines are large, heavy, condensed, and usually all caps; supporting copy uses a rounded geometric sans-serif with generous line spacing. Keep layouts spacious, cinematic, and immediately legible on a phone.
-
-Recurring frame: a compact circular founder portrait at top-left, founder name and short tagline beside it, a small repost mark at top-right, and an unboxed slide number at bottom-right. Use the same placement across the deck. Cover and closing slides may use a photorealistic founder cutout as the hero. Body slides separate copy and imagery into deliberate regions; never dump text over a busy image. Product visuals should use accurate interfaces and official logos. Every slide must feel like one locked system rather than a new design.`;
-
+/**
+ * A blank starting kit — no baked-in identity. Users add their own name, voice,
+ * palette, and style. The neutral placeholder palette only gives the colour UI
+ * editable slots (it has no add-colour button); every value is meant to be
+ * overwritten.
+ */
 export const DEFAULT_BRAND_KIT: BrandKit = {
   version: 1,
-  displayName: "Daniel Paul",
-  handle: "danielpaul",
-  tagline: "Building powerful personal brands with AI",
+  displayName: "",
+  handle: "",
+  tagline: "",
   website: "",
   colors: [
-    { id: "primary", name: "Brand crimson", hex: "#ED1846" },
-    { id: "ink", name: "Midnight", hex: "#080A10" },
-    { id: "surface", name: "Graphite", hex: "#171A24" },
-    { id: "text", name: "Pure white", hex: "#FFFFFF" },
-    { id: "muted", name: "Soft grey", hex: "#CFCFCF" },
+    { id: "primary", name: "Accent", hex: "#5B677A" },
+    { id: "ink", name: "Background", hex: "#0B0C10" },
+    { id: "surface", name: "Surface", hex: "#161922" },
+    { id: "text", name: "Text", hex: "#FFFFFF" },
+    { id: "muted", name: "Muted", hex: "#9AA3B2" },
   ],
-  headlineFont: "Anton / Druk Condensed — heavy, condensed, all caps",
-  bodyFont: "Poppins — rounded geometric sans-serif",
-  voice: "Direct, warm, practical, and confident. Short sentences. Strong lived-experience point of view.",
-  vocabulary: "Use clear language, concrete examples, and decisive calls to action.",
-  avoid: "Avoid corporate filler, generic motivation, invented proof, and em dashes.",
-  styleSpec: ORIGINAL_STYLE_SPEC,
-  notes: "Imported from the original Second Brain brand system as an editable starting point.",
+  headlineFont: "",
+  bodyFont: "",
+  voice: "",
+  vocabulary: "",
+  avoid: "",
+  styleSpec: "",
+  notes: "",
   assets: { face: null, logo: null, references: [] },
   updatedAt: "",
 };
@@ -212,23 +214,30 @@ export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]>
 }
 
 export function brandKitContext(kit: BrandKit): string {
+  const palette = kit.colors.filter((color) => color.hex).map((color) => `${color.name} ${color.hex}`).join(", ");
+  const references = [
+    kit.assets.face ? "founder face" : "",
+    kit.assets.logo ? "logo" : "",
+    kit.assets.references.length ? `${kit.assets.references.length} style reference${kit.assets.references.length === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(", ");
+  // Only emit fields the founder has actually set, so an unconfigured kit stays
+  // minimal and agents fall back to the second brain's Voice DNA instead of
+  // empty labels.
+  const configured = kit.displayName || kit.voice || kit.styleSpec || kit.tagline;
   return [
-    `# Brand Kit: ${kit.displayName || "Unnamed brand"}`,
+    `# Brand Kit: ${kit.displayName || "Not configured yet"}`,
     kit.handle ? `Handle: @${kit.handle}` : "",
     kit.tagline ? `Tagline: ${kit.tagline}` : "",
     kit.website ? `Website: ${kit.website}` : "",
-    `Palette: ${kit.colors.map((color) => `${color.name} ${color.hex}`).join(", ")}`,
-    `Headline typography: ${kit.headlineFont}`,
-    `Body typography: ${kit.bodyFont}`,
-    `Voice: ${kit.voice}`,
-    `Preferred language: ${kit.vocabulary}`,
-    `Avoid: ${kit.avoid}`,
-    `Locked visual system:\n${kit.styleSpec}`,
+    palette ? `Palette: ${palette}` : "",
+    kit.headlineFont ? `Headline typography: ${kit.headlineFont}` : "",
+    kit.bodyFont ? `Body typography: ${kit.bodyFont}` : "",
+    kit.voice ? `Voice: ${kit.voice}` : "",
+    kit.vocabulary ? `Preferred language: ${kit.vocabulary}` : "",
+    kit.avoid ? `Avoid: ${kit.avoid}` : "",
+    kit.styleSpec ? `Locked visual system:\n${kit.styleSpec}` : "",
     kit.notes ? `Additional notes: ${kit.notes}` : "",
-    `Available visual references: ${[
-      kit.assets.face ? "founder face" : "",
-      kit.assets.logo ? "logo" : "",
-      kit.assets.references.length ? `${kit.assets.references.length} style reference${kit.assets.references.length === 1 ? "" : "s"}` : "",
-    ].filter(Boolean).join(", ") || "none uploaded"}.`,
+    `Available visual references: ${references || "none uploaded"}.`,
+    configured ? "" : "No brand voice or visual system has been configured yet. Draw voice and style from the founder's second brain (e.g. the Voice DNA note) and keep visuals clean and neutral until a brand kit is set.",
   ].filter(Boolean).join("\n\n");
 }
