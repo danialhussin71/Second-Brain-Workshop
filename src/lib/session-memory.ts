@@ -49,10 +49,18 @@ export type SessionInput = {
   /** Content formats that were produced this run (e.g. ["carousel"]). */
   producedFormats: string[];
   /** Short per-agent contributions: what each producer delivered. */
-  contributions: Array<{ agent: string; title: string; summary: string }>;
+  contributions: Array<{ agent: string; title: string; summary: string; output?: string }>;
   /** Exact source titles the run was grounded in. */
   citations: string[];
 };
+
+/** A bounded verbatim excerpt (head + tail) so recall can quote the hook AND CTA. */
+function excerpt(output?: string): string {
+  const text = (output || "").replace(/\s*\n\s*\n\s*/g, "\n").trim();
+  if (!text) return "";
+  if (text.length <= 900) return text;
+  return `${text.slice(0, 560)}\n[…]\n${text.slice(-280)}`;
+}
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -96,6 +104,11 @@ function buildBody(input: SessionInput, summary: SessionSummary, human: string):
   const produced = input.contributions.length
     ? input.contributions.map((c) => `- ${c.title} (${c.agent}): ${c.summary}`).join("\n")
     : "- (knowledge answer, no deliverable)";
+  // Verbatim excerpts of what was produced, so a later "what was the CTA?" style
+  // recall can quote the actual copy rather than admit it wasn't stored.
+  const excerpts = input.contributions
+    .map((c) => ({ title: c.title, agent: c.agent, text: excerpt(c.output) }))
+    .filter((c) => c.text);
   const tagLine = summary.tags.length ? summary.tags.map((t) => t.replace(/^#/, "")).join(", ") : "none";
   return [
     `**When:** ${human}`,
@@ -106,6 +119,7 @@ function buildBody(input: SessionInput, summary: SessionSummary, human: string):
     "**Produced:**",
     produced,
     "",
+    ...(excerpts.length ? ["**What I wrote (excerpt):**", ...excerpts.map((c) => `> ${c.agent} — ${c.title}\n${c.text.split("\n").map((line) => `> ${line}`).join("\n")}`), ""] : []),
     `**Topics:** ${tagLine}`,
     input.citations.length ? `**Grounded in:** ${input.citations.join(", ")}` : "",
   ].filter(Boolean).join("\n");

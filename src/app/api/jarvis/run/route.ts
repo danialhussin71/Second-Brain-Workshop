@@ -247,10 +247,28 @@ function carouselSchema(slideCount: number) {
   };
 }
 
+/**
+ * Does the instruction ask to CREATE something new (vs. recall past work)?
+ * Past-tense references ("the carousel you made") are stripped first so they
+ * don't read as a fresh creation directive.
+ */
+function wantsNewDeliverable(instruction: string): boolean {
+  const withoutPast = instruction.replace(/\b(made|wrote|created|built|generated|designed|produced|drafted|did)\b/gi, "");
+  return /\b(write|create|make|generate|draft|design|produce|build|compose|craft|give me|turn (?:this|that|it) into|another|a new|new (?:one|version)|similar)\b/i.test(withoutPast);
+}
+
 function cleanPlan(plan: PlannerResult, instruction: string): TeamPlan {
   const validFormats = [...new Set(plan.formats)].filter((id): id is ContentFormat =>
     ["text", "picture", "carousel", "reels", "longform", "newsletter"].includes(id)
   );
+  // A recall question ("remember when you did X?") must be answered from the
+  // session log, never regenerate a fresh deliverable — unless the founder also
+  // explicitly asks to create something new in the same breath. The planner LLM
+  // gets pulled toward content_creation by format words ("the carousel"), so
+  // enforce this deterministically.
+  if (isRecallQuery(instruction) && !wantsNewDeliverable(instruction)) {
+    return { assignments: [], shared: ["research"], rationale: "Recalling this from the session log." };
+  }
   if (plan.intent === "knowledge_answer") {
     return { assignments: [], shared: ["research"], rationale: plan.rationale };
   }
@@ -272,6 +290,11 @@ function cleanPlan(plan: PlannerResult, instruction: string): TeamPlan {
 }
 
 async function planWithCeo(instruction: string, signal: AbortSignal): Promise<TeamPlan> {
+  // Recall short-circuit: answer from the session log before the LLM (or the
+  // keyword fallback) can be pulled into regenerating a deliverable.
+  if (isRecallQuery(instruction) && !wantsNewDeliverable(instruction)) {
+    return { assignments: [], shared: ["research"], rationale: "Recalling this from the session log." };
+  }
   try {
     const plan = await openAIJson<PlannerResult>({
       name: "marketing_team_plan",
@@ -594,7 +617,9 @@ async function runPicturePost(
       "concept is one vivid sentence describing the visual. image_prompt is a complete, self-contained prompt for a photorealistic image model: describe subject, setting, lighting, mood, and composition. Do not ask it to leave space for overlays. " +
       "The founder's real portrait, logo, and brand references from the brand kit are supplied to the image model automatically, so when a person is central, write the subject as the real founder and rely on the identity lock. " +
       "on_image_text is a short two-to-six word phrase to render on the image, or an empty string for a clean photo. " +
-      "caption is the posting caption in the founder's voice, ending with cta. hashtags omit the leading #. Never invent facts. grounding may contain only exact supplied note titles.\n\n" +
+      "caption is the posting caption in the founder's voice, ending with cta. Match the founder's Voice DNA. No emojis unless their voice clearly uses them. " +
+      "Only include hashtags if the founder explicitly asks for them or their voice guide uses them; otherwise return an empty hashtags array. When present, hashtags omit the leading #. " +
+      "Never invent facts, metrics, quotes, or client stories. grounding may contain only exact supplied note titles.\n\n" +
       (guide ? `AUTHORITATIVE PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
     input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
   });
@@ -732,7 +757,7 @@ export async function POST(request: Request) {
           producedFormats: plan.assignments.flatMap((assignment) => assignment.plan),
           contributions: contributions
             .filter((contribution) => contribution.agent !== "research")
-            .map((contribution) => ({ agent: node(contribution.agent).title, title: contribution.title, summary: contribution.summary })),
+            .map((contribution) => ({ agent: node(contribution.agent).title, title: contribution.title, summary: contribution.summary, output: contribution.output })),
           citations: [...new Set([...(synthesized?.citations ?? []), ...contributions.flatMap((contribution) => contribution.source_titles)])],
         });
         if (savedTitle) emit({ type: "agent.tool", node: "kronos", tool: "Memory", detail: savedTitle, at: now() });
