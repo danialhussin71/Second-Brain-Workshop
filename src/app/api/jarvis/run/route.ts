@@ -15,6 +15,7 @@ import {
 import { RICH_RESPONSE_SCHEMA, type RichResponse } from "@/lib/rich-response";
 import { brandKitContext, getBrandKit } from "@/lib/brand-kit";
 import { STYLE_PRESETS } from "@/lib/post-image";
+import { isRecallQuery, isSessionNote, recordSession } from "@/lib/session-memory";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -282,6 +283,8 @@ async function planWithCeo(instruction: string, signal: AbortSignal): Promise<Te
         "The only workers are: Research (reads the uploaded second brain and answers knowledge/analysis questions), " +
         "CMO (marketing strategy and decisions), Content (a coordinator automatically used for production), and format producers: " +
         "text, picture, carousel, reels, longform, newsletter. Route only to agents that genuinely need to work. " +
+        "The second brain also holds a running log of past sessions (what the team did in previous chats). " +
+        "A recall or memory question ('remember when you did X', 'what did we do last time', 'the session where we made the carousel') is knowledge_answer: Research reads the session log, no CMO and no content format. " +
         "A question such as 'what is my ICP?' is knowledge_answer: Research only, no CMO and no content format. " +
         "A strategy, positioning, campaign, or launch decision is marketing_strategy: Research plus CMO, with formats empty unless a deliverable is explicitly requested. " +
         "A request to write or create content is content_creation: choose the exact requested format(s), use CMO, and use Research when brain context, audience, voice, or angle improves the work. " +
@@ -300,11 +303,15 @@ function queryTerms(input: string): string[] {
 
 function selectKnowledge(notes: OwnerNote[], instruction: string, limit = 10): OwnerNote[] {
   const terms = queryTerms(instruction);
+  const recall = isRecallQuery(instruction);
   return notes
     .map((note) => {
       const title = note.title.toLowerCase();
       const haystack = `${note.title}\n${note.path}\n${note.body}`.toLowerCase();
       let score = /brand|voice|position|icp|audience|offer/i.test(note.title) ? 2 : 0;
+      // The session log is what the founder means by "remember when you did X",
+      // so surface it for recall queries and keep it out of the way otherwise.
+      if (isSessionNote(note)) score += recall ? 9 : -1.5;
       for (const term of terms) score += (title.includes(term) ? 6 : 0) + (haystack.includes(term) ? 1 : 0);
       return { note, score };
     })
@@ -331,6 +338,7 @@ async function runResearch(instruction: string, notes: OwnerNote[], emit: Emit, 
     maxOutputTokens: 10000,
     instructions:
       "You are the Research specialist in a marketing team. Answer the research portion of the instruction from the supplied second-brain notes. " +
+      "The notes may include a log of past sessions (titles begin with 'Session —'). If the founder is recalling something the team did before ('remember when you did X'), answer from those session notes and state when it happened. " +
       "Separate source-backed facts from reasonable inference. Be concrete. source_titles may contain only exact supplied note titles. " +
       "Your output is an internal handoff to the CEO or CMO, not generic advice.",
     input: `Instruction:\n${instruction}\n\nSECOND BRAIN:\n${knowledgeText(notes)}`,
@@ -679,7 +687,7 @@ export async function POST(request: Request) {
         const allNotes = await listOwnerNotes();
         const brand = await getBrandKit();
         const brandNote: OwnerNote = { path: "Brand/Brand Kit.md", title: "Brand Kit", folder: "Brand", body: brandKitContext(brand) };
-        const selectedNotes = selectKnowledge([brandNote, ...allNotes.filter((note) => note.title.toLowerCase() !== "brand kit")], text);
+        const selectedNotes = selectKnowledge([brandNote, ...allNotes.filter((note) => note.title.toLowerCase() !== "brand kit")], text, isRecallQuery(text) ? 16 : 10);
         if (!selectedNotes.some((note) => note.path === brandNote.path)) selectedNotes.unshift(brandNote);
         const contributions: Contribution[] = [];
         let research: Contribution | undefined;
@@ -707,11 +715,28 @@ export async function POST(request: Request) {
 
         const onlyFormat = plan.assignments.length === 1 && plan.assignments[0].plan.length === 1 ? plan.assignments[0].plan[0] : null;
         const dedicatedArtifactOnly = onlyFormat === "carousel" || onlyFormat === "reels" || onlyFormat === "longform" || onlyFormat === "text" || onlyFormat === "picture";
+        let synthesized: RichResponse | undefined;
         if (!dedicatedArtifactOnly) {
           emit({ type: "agent.status", node: "kronos", status: "Assembling the final briefing", at: now() });
-          const response = await synthesize(text, plan, contributions, request.signal);
-          emit({ type: "response", format: "blocks-json", data: response, at: now() });
+          synthesized = await synthesize(text, plan, contributions, request.signal);
+          emit({ type: "response", format: "blocks-json", data: synthesized, at: now() });
         }
+
+        // Journal this chat into the second brain so Jarvis remembers what it did.
+        emit({ type: "agent.status", node: "kronos", status: "Filing this chat into your second brain", at: now() });
+        const savedTitle = await recordSession({
+          runId,
+          at: now(),
+          instruction: text,
+          rationale: plan.rationale,
+          producedFormats: plan.assignments.flatMap((assignment) => assignment.plan),
+          contributions: contributions
+            .filter((contribution) => contribution.agent !== "research")
+            .map((contribution) => ({ agent: node(contribution.agent).title, title: contribution.title, summary: contribution.summary })),
+          citations: [...new Set([...(synthesized?.citations ?? []), ...contributions.flatMap((contribution) => contribution.source_titles)])],
+        });
+        if (savedTitle) emit({ type: "agent.tool", node: "kronos", tool: "Memory", detail: savedTitle, at: now() });
+
         emit({ type: "agent.status", node: "kronos", status: "Done. The team's output is ready.", at: now() });
         emit({ type: "run.complete", at: now() });
       } catch (error) {
