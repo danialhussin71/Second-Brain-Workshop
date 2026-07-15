@@ -22,7 +22,7 @@ export default function JarvisPage() {
         </main>
         <div className="hidden w-px bg-gradient-to-b from-transparent via-white/12 to-transparent lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block" />
         <aside className="flex min-h-0 w-full flex-col lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:pl-6"><ResponsePanel state={state} /></aside>
-        <div className="flex flex-col justify-center gap-2 px-2 lg:col-start-1 lg:row-start-2 lg:pr-6"><div className="w-full max-w-xl"><CommandBar onSubmit={run} running={state.running} /></div></div>
+        <div className="flex flex-col items-center justify-center gap-2 px-2 lg:col-start-1 lg:row-start-2 lg:pr-6"><div className="w-full max-w-xl"><CommandBar onSubmit={run} running={state.running} /></div></div>
       </div>
     </HudFrame>
     <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
