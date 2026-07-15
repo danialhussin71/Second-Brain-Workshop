@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, type PanInfo } from "motion/react";
-import { CaretLeft, CaretRight, Copy, Check, Sparkle, ArrowsOut, ArrowsIn, DownloadSimple, FilePdf, FileZip } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Copy, Check, ImageBroken, ArrowsOut, ArrowsIn, DownloadSimple, FilePdf, FileZip } from "@phosphor-icons/react";
 import { zipSync } from "fflate";
 import type { CarouselArtifactData } from "@/lib/jarvis-events";
 import { CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
@@ -284,7 +284,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
                   <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                   {genState[i] === "error" ? (
                     <>
-                      <Sparkle size={26} weight="fill" style={{ color: BRAND }} className="relative opacity-90" />
+                      <ImageBroken size={26} weight="fill" style={{ color: BRAND }} className="relative opacity-90" />
                       <div className="relative text-[13px] text-white/75">This slide didn&apos;t render.</div>
                       <button
                         onClick={() => genOne(i)}

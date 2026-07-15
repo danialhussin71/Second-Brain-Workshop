@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Copy, DownloadSimple, FilePdf, FilmStrip, MicrophoneStage, Play, Sparkle } from "@phosphor-icons/react";
+import { Check, Copy, DownloadSimple, FilePdf, FilmStrip, Lightning, MicrophoneStage, Play } from "@phosphor-icons/react";
 import type { ReelArtifactData } from "@/lib/jarvis-events";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
@@ -66,7 +66,7 @@ export default function ReelScriptArtifact({ data }: { data: ReelArtifactData })
     {tab === "script" ? <div className="p-4">
       <div className="relative overflow-hidden rounded-2xl border border-fuchsia-300/20 bg-gradient-to-br from-fuchsia-400/[.12] via-purple-400/[.06] to-transparent p-4 shadow-[0_20px_55px_-35px_rgba(217,70,239,.8)]">
         <div className="absolute -right-6 -top-7 h-24 w-24 rounded-full bg-fuchsia-400/10 blur-2xl" />
-        <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.2em] text-fuchsia-300"><Sparkle size={12} weight="fill" />0:00 · Triple hook</div>
+        <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.2em] text-fuchsia-300"><Lightning size={12} weight="fill" />0:00 · Triple hook</div>
         <p className="mt-3 text-[17px] font-medium leading-snug text-white">{data.hook.spoken}</p>
         <div className="mt-4 grid gap-2 text-[11px]">
           <div className="rounded-lg bg-black/20 p-2.5"><span className="text-white/35">FIRST FRAME</span><p className="mt-1 text-white/65">{data.hook.visual}</p></div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, DownloadSimple, FilePdf, FilmSlate, PlayCircle, PresentationChart, Sparkle } from "@phosphor-icons/react";
+import { Check, Copy, DownloadSimple, FilePdf, FilmSlate, Gift, PlayCircle, PresentationChart } from "@phosphor-icons/react";
 import type { LongformArtifactData } from "@/lib/jarvis-events";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
@@ -64,7 +64,7 @@ export default function LongformScriptArtifact({ data }: { data: LongformArtifac
       <div className="mt-3 rounded-xl border border-emerald-300/15 bg-emerald-400/[.055] p-3"><p className="text-[9px] font-bold uppercase tracking-[.18em] text-emerald-300">Final payoff</p><p className="mt-1.5 text-[13px] leading-relaxed text-white/70">{data.final_payoff}</p></div>
       <div className="mt-2 rounded-xl border border-cyan-300/15 bg-cyan-400/[.05] p-3"><p className="text-[9px] font-bold uppercase tracking-[.18em] text-cyan-300">Watch next bridge</p><p className="mt-1.5 text-[13px] leading-relaxed text-white/70">{data.watch_next_bridge}</p></div>
     </div> : tab === "production" ? <div className="space-y-3 p-4">
-      <Panel icon={<Sparkle size={15} />} label="Payoff map" accent="text-amber-300"><ol className="space-y-2">{data.payoff_map.map((item, index) => <li key={index} className="flex gap-2 text-[12px] leading-relaxed text-white/60"><span className="font-mono text-[9px] text-amber-300/45">{String(index + 1).padStart(2, "0")}</span>{item}</li>)}</ol></Panel>
+      <Panel icon={<Gift size={15} weight="duotone" />} label="Payoff map" accent="text-amber-300"><ol className="space-y-2">{data.payoff_map.map((item, index) => <li key={index} className="flex gap-2 text-[12px] leading-relaxed text-white/60"><span className="font-mono text-[9px] text-amber-300/45">{String(index + 1).padStart(2, "0")}</span>{item}</li>)}</ol></Panel>
       <Panel icon={<PlayCircle size={15} />} label="Mid-video subscribe line" accent="text-fuchsia-300"><p className="text-[12px] leading-relaxed text-white/65">{data.subscribe_line}</p></Panel>
       <Panel icon={<PresentationChart size={15} />} label="Production notes" accent="text-cyan-300"><ul className="space-y-2">{data.production_notes.map((item, index) => <li key={index} className="flex gap-2 text-[12px] leading-relaxed text-white/60"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-300/60" />{item}</li>)}</ul></Panel>
       <div className="space-y-2">{data.chapters.map((chapter) => <div key={chapter.n} className="rounded-xl border border-white/[.07] bg-white/[.03] p-3"><div className="flex items-center justify-between"><span className="text-[10px] font-medium text-white/65">{chapter.title}</span><span className="font-mono text-[9px] text-white/25">{chapter.timecode}</span></div><ul className="mt-2 space-y-1.5">{chapter.visuals.map((visual, index) => <li key={index} className="flex gap-2 text-[10px] leading-relaxed text-white/40"><span className="text-cyan-300/50">SHOT</span>{visual}</li>)}</ul></div>)}</div>

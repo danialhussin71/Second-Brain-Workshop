@@ -2,16 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Check,
   CircleNotch,
+  Fingerprint,
+  Flask,
   FloppyDisk,
+  IdentificationBadge,
   ImageSquare,
-  MagicWand,
+  PaintBrushBroad,
   Palette,
-  Sparkle,
+  Scan,
+  ShieldCheck,
+  Signature,
+  TextAa,
   Trash,
   UploadSimple,
   UserCircle,
+  Waveform,
 } from "@phosphor-icons/react";
 import type { BrandAsset, BrandColor, BrandKit } from "@/lib/brand-kit";
 
@@ -143,14 +149,14 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     <section className="relative overflow-hidden rounded-3xl border border-fuchsia-300/20 bg-[linear-gradient(135deg,rgba(217,70,239,.1),rgba(34,211,238,.03)_55%,rgba(255,255,255,.02))] p-5">
       <div className="pointer-events-none absolute -right-16 -top-20 h-52 w-52 rounded-full bg-fuchsia-500/15 blur-3xl" />
       <div className="relative flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-xl"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200"><Sparkle size={18} weight="duotone" /></div><p className="text-lg font-semibold tracking-tight">Build a brand Jarvis can actually use</p><p className="mt-1.5 text-xs leading-relaxed text-white/45">Identity, visuals, and voice become durable instructions. Uploaded references are passed into GPT Image 2, while every marketing agent receives the written brand system.</p></div>
+        <div className="max-w-xl"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200"><Fingerprint size={18} weight="duotone" /></div><p className="text-lg font-semibold tracking-tight">Build a brand Jarvis can actually use</p><p className="mt-1.5 text-xs leading-relaxed text-white/45">Identity, visuals, and voice become durable instructions. Uploaded references are passed into GPT Image 2, while every marketing agent receives the written brand system.</p></div>
         <div className="min-w-32 rounded-2xl border border-white/10 bg-black/20 p-3 text-right"><p className="text-[10px] uppercase tracking-[.18em] text-white/35">Brand readiness</p><p className="mt-1 text-2xl font-semibold text-white">{readiness.score}%</p><p className="text-[10px] text-white/35">{readiness.done} of {readiness.total} essentials</p></div>
       </div>
     </section>
 
     <section className="grid gap-4 lg:grid-cols-[1.12fr_.88fr]">
       <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-        <SectionTitle icon={<UserCircle size={16} weight="duotone" />} title="Identity assets" detail="Use clean, high-resolution PNG, JPG, or WebP files." />
+        <SectionTitle icon={<IdentificationBadge size={16} weight="duotone" />} title="Identity assets" detail="Use clean, high-resolution PNG, JPG, or WebP files." />
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <PrimaryAssetCard label="Founder face" hint="Portrait, cover cutout, and recurring avatar" kind="face" asset={kit.assets.face} bust={bust} busy={busy === "face"} onPick={(file) => upload("face", file)} onRemove={() => remove("face")} />
           <PrimaryAssetCard label="Logo mark" hint="Brand signature and approved watermark" kind="logo" asset={kit.assets.logo} bust={bust} busy={busy === "logo"} onPick={(file) => upload("logo", file)} onRemove={() => remove("logo")} />
@@ -160,7 +166,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     </section>
 
     <section className="rounded-2xl border border-cyan-300/15 bg-cyan-400/[.035] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<MagicWand size={16} weight="duotone" />} title="Visual reference lab" detail="Upload up to four great examples. Jarvis learns the recurring system, not just the mood." /><button onClick={() => void analyzeReferences()} disabled={busy !== null || !kit.assets.references.length} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "analyze" ? <CircleNotch size={14} className="animate-spin" /> : <MagicWand size={14} weight="duotone" />}Learn style from references</button></div>
+      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<Flask size={16} weight="duotone" />} title="Visual reference lab" detail="Upload up to four great examples. Jarvis learns the recurring system, not just the mood." /><button onClick={() => void analyzeReferences()} disabled={busy !== null || !kit.assets.references.length} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "analyze" ? <CircleNotch size={14} className="animate-spin" /> : <Scan size={14} weight="duotone" />}Learn style from references</button></div>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {kit.assets.references.map((asset) => <ReferenceTile key={asset.id} asset={asset} bust={bust} onRemove={() => void remove("reference", asset.id)} />)}
         {kit.assets.references.length < 4 && <button onClick={() => referenceInput.current?.click()} disabled={busy !== null} className="group flex aspect-[4/5] min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 text-white/35 transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-40"><UploadSimple size={19} weight="bold" /><span className="text-[10px] font-medium">Add references</span></button>}
@@ -169,7 +175,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     </section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-      <SectionTitle icon={<Sparkle size={16} weight="duotone" />} title="Brand identity" detail="The recurring signature shown across every deliverable." />
+      <SectionTitle icon={<Signature size={16} weight="duotone" />} title="Brand identity" detail="The recurring signature shown across every deliverable." />
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <InputField label="Founder / brand name" value={kit.displayName} onChange={(displayName) => update({ displayName })} placeholder="Jane Doe" />
         <InputField label="Handle" value={kit.handle} onChange={(handle) => update({ handle })} placeholder="janedoe" prefix="@" />
@@ -186,17 +192,17 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     </section>
 
     <section className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<ImageSquare size={16} weight="duotone" />} title="Typography" detail="Describe usable font families or a clear typographic character." /><div className="mt-4 space-y-3"><InputField label="Headline system" value={kit.headlineFont} onChange={(headlineFont) => update({ headlineFont })} placeholder="Heavy condensed grotesque" /><InputField label="Body system" value={kit.bodyFont} onChange={(bodyFont) => update({ bodyFont })} placeholder="Rounded geometric sans-serif" /></div></div>
-      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<Sparkle size={16} weight="duotone" />} title="Voice DNA" detail="How the brand should sound when Jarvis writes." /><TextField label="Tone and rhythm" value={kit.voice} onChange={(voice) => update({ voice })} placeholder="Direct, warm, short sentences…" rows={5} /></div>
+      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<TextAa size={16} weight="duotone" />} title="Typography" detail="Describe usable font families or a clear typographic character." /><div className="mt-4 space-y-3"><InputField label="Headline system" value={kit.headlineFont} onChange={(headlineFont) => update({ headlineFont })} placeholder="Heavy condensed grotesque" /><InputField label="Body system" value={kit.bodyFont} onChange={(bodyFont) => update({ bodyFont })} placeholder="Rounded geometric sans-serif" /></div></div>
+      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<Waveform size={16} weight="duotone" />} title="Voice DNA" detail="How the brand should sound when Jarvis writes." /><TextField label="Tone and rhythm" value={kit.voice} onChange={(voice) => update({ voice })} placeholder="Direct, warm, short sentences…" rows={5} /></div>
     </section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-      <SectionTitle icon={<Check size={16} weight="bold" />} title="Language guardrails" detail="Give every agent the same verbal instincts." />
+      <SectionTitle icon={<ShieldCheck size={16} weight="duotone" />} title="Language guardrails" detail="Give every agent the same verbal instincts." />
       <div className="mt-4 grid gap-3 sm:grid-cols-2"><TextField label="Use more of" value={kit.vocabulary} onChange={(vocabulary) => update({ vocabulary })} placeholder="Favourite words, phrases, patterns, beliefs…" rows={5} /><TextField label="Never use" value={kit.avoid} onChange={(avoid) => update({ avoid })} placeholder="Banned phrases, clichés, punctuation, claims…" rows={5} /></div>
     </section>
 
     <section className="rounded-2xl border border-fuchsia-300/15 bg-fuchsia-400/[.025] p-4">
-      <SectionTitle icon={<MagicWand size={16} weight="duotone" />} title="Locked visual style" detail="The production specification applied to every carousel slide and generated visual." />
+      <SectionTitle icon={<PaintBrushBroad size={16} weight="duotone" />} title="Locked visual style" detail="The production specification applied to every carousel slide and generated visual." />
       <textarea value={kit.styleSpec} onChange={(event) => update({ styleSpec: event.target.value })} rows={12} spellCheck={false} className={`${inputClass} min-h-52 resize-y font-mono text-[11px] leading-relaxed`} placeholder="Describe composition, palette, hierarchy, repeatable components, imagery, spacing, and consistency rules…" />
       <TextField label="Additional production notes" value={kit.notes} onChange={(notes) => update({ notes })} placeholder="Anything else the team must preserve…" rows={4} />
     </section>
