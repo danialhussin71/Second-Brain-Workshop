@@ -2,6 +2,8 @@ import { blobConfigured, blobDel, blobGetBytes, blobGetText, blobPutBytes, blobP
 
 export const BRAND_KIT_PATH = "owner/brand/kit.json";
 const BRAND_ASSET_PREFIX = "owner/brand/assets";
+/** The pre-rendered locked carousel header (rendered client-side at kit save). */
+export const BRAND_HEADER_PATH = "owner/brand/assets/locked-header.png";
 
 export type BrandColor = {
   id: string;
@@ -44,7 +46,7 @@ export type BrandReferenceImage = {
   data: Uint8Array;
   name: string;
   type: string;
-  role: "founder-face" | "brand-logo" | "style-reference";
+  role: "founder-face" | "brand-logo" | "style-reference" | "locked-header";
 };
 
 /**
@@ -198,7 +200,7 @@ export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
   return bytes ? { ...bytes, asset } : null;
 }
 
-export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]> {
+export async function loadBrandReferenceImages(options: { includeHeader?: boolean } = {}): Promise<BrandReferenceImage[]> {
   const kit = await getBrandKit();
   const entries: Array<{ asset: BrandAsset | null; role: BrandReferenceImage["role"] }> = [
     { asset: kit.assets.face, role: "founder-face" },
@@ -210,7 +212,14 @@ export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]>
     const bytes = await blobGetBytes(asset.path);
     return bytes ? { data: bytes.data, name: asset.name, type: bytes.contentType || asset.contentType, role } : null;
   }));
-  return results.filter((item): item is BrandReferenceImage => !!item);
+  const images = results.filter((item): item is BrandReferenceImage => !!item);
+  if (options.includeHeader) {
+    const header = await blobGetBytes(BRAND_HEADER_PATH);
+    // first in the list — it is the most authoritative reference and must never
+    // fall off the reference cap
+    if (header) images.unshift({ data: header.data, name: "locked-header.png", type: header.contentType || "image/png", role: "locked-header" });
+  }
+  return images;
 }
 
 export function brandKitContext(kit: BrandKit): string {

@@ -1,17 +1,24 @@
 /**
- * Locked carousel header — the model repaints every pixel it draws, so a
- * "consistent header" prompt (or even a reference image) still drifts between
- * slides. Instead we reserve a flat band at the top of every slide and stamp a
- * deterministically rendered header (avatar + name + tagline + handle) onto it
- * after generation. Identical on every slide by construction.
+ * Locked carousel header — rendered ONCE (client-side canvas) when the brand
+ * kit is saved, stored on Blob, then reused two ways for every carousel slide:
  *
- * `carouselHeader` is pure and shared with the API route (it decides whether a
- * band is reserved in the prompt); the canvas compositor below is client-only.
+ *  1. sent to GPT Image as a `locked-header` reference so the model reproduces
+ *     it at the top of the slide and designs the artwork around it, and
+ *  2. stamped over the top band after generation — the exact same PNG the
+ *     model saw — so the header is pixel-identical across the deck even when
+ *     the model's copy drifts.
+ *
+ * Because the header is rendered once, layout decisions (like whether the
+ * tagline wraps to two lines) are made once and can never vary per slide.
+ *
+ * `carouselHeader` is pure and safe to import server-side; everything that
+ * touches canvas/Image is client-only.
  */
 import type { BrandKit } from "./brand-kit";
 
-/** Header band height relative to the 1088×1360 slide. */
-export const HEADER_BAND = 124 / 1360;
+/** Native size of the rendered header strip (slide width × band height). */
+export const HEADER_W = 1088;
+export const HEADER_H = 208;
 
 export type CarouselHeader = {
   name: string;
@@ -66,109 +73,195 @@ export function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-const ellipsize = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let out = text;
-  while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) out = out.slice(0, -1).trimEnd();
-  return `${out}…`;
-};
+/** Wrap text into at most `maxLines` lines, ellipsizing the final line. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || !line) {
+      line = next;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (line) lines.push(line);
+  const rest = words.slice(lines.join(" ").split(/\s+/).length).join(" ");
+  if (rest) lines[lines.length - 1] = `${lines[lines.length - 1]} ${rest}`;
+  return lines.slice(0, maxLines).map((entry, index) => {
+    if (index < maxLines - 1 || ctx.measureText(entry).width <= maxWidth) return entry;
+    let out = entry;
+    while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) out = out.slice(0, -1).trimEnd();
+    return `${out}…`;
+  });
+}
+
+/** The repost glyph — two horizontal arrows forming a cycle. */
+function drawRepostIcon(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
+  const lw = 4.5;
+  const head = 9;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lw;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const topY = y + h * 0.28;
+  const botY = y + h * 0.72;
+  // top arrow → right, with a small down-hook on the left
+  ctx.beginPath();
+  ctx.moveTo(x, topY + h * 0.22);
+  ctx.lineTo(x, topY);
+  ctx.lineTo(x + w - head, topY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + w - head, topY - head * 0.85);
+  ctx.lineTo(x + w, topY);
+  ctx.lineTo(x + w - head, topY + head * 0.85);
+  ctx.closePath();
+  ctx.fill();
+  // bottom arrow ← left, with a small up-hook on the right
+  ctx.beginPath();
+  ctx.moveTo(x + w, botY - h * 0.22);
+  ctx.lineTo(x + w, botY);
+  ctx.lineTo(x + head, botY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + head, botY - head * 0.85);
+  ctx.lineTo(x, botY);
+  ctx.lineTo(x + head, botY + head * 0.85);
+  ctx.closePath();
+  ctx.fill();
+}
 
 /**
- * Stamp the locked header band onto a generated slide. Returns a new PNG data
- * URL at the slide's native size. The band is opaque, so the result is
- * pixel-identical across slides even when the model ignores the reserve
- * instruction.
+ * Render the locked header strip in the founder's theme: a rounded-top band in
+ * the brand background color, avatar + name + tagline (wrapped once, max two
+ * lines) on the left, a REPOST mark on the right. Transparent above the band
+ * and in the corners so the slide's own artwork shows through.
  */
-export async function composeSlideWithHeader(
-  slideDataUrl: string,
-  header: CarouselHeader,
-  avatar: HTMLImageElement | null,
-): Promise<string> {
+export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImageElement | null): Promise<Blob | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = HEADER_W;
+  canvas.height = HEADER_H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const onDark = luminance(header.bandHex) < 0.55;
+  const text = onDark ? "#FFFFFF" : "#0B0C10";
+  const muted = onDark ? "rgba(255,255,255,0.66)" : "rgba(11,12,16,0.66)";
+  const family = (typeof document !== "undefined" && getComputedStyle(document.body).fontFamily) || "system-ui, sans-serif";
+
+  // the band — rounded top corners, square bottom (it continues into the slide)
+  const bandY = 16;
+  const r = 30;
+  ctx.beginPath();
+  ctx.moveTo(0, HEADER_H);
+  ctx.lineTo(0, bandY + r);
+  ctx.arcTo(0, bandY, r, bandY, r);
+  ctx.lineTo(HEADER_W - r, bandY);
+  ctx.arcTo(HEADER_W, bandY, HEADER_W, bandY + r, r);
+  ctx.lineTo(HEADER_W, HEADER_H);
+  ctx.closePath();
+  ctx.fillStyle = header.bandHex;
+  ctx.fill();
+  // hairline top sheen so the band edge reads crisply on any background
+  ctx.strokeStyle = onDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const padX = 56;
+  const bandH = HEADER_H - bandY;
+  let textX = padX;
+
+  // avatar (or accent initial) in a circle, vertically centered in the band
+  if (avatar || header.name) {
+    const d = 104;
+    const ay = bandY + (bandH - d) / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(padX + d / 2, ay + d / 2, d / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    if (avatar) {
+      const iw = avatar.naturalWidth || 1;
+      const ih = avatar.naturalHeight || 1;
+      const scale = Math.max(d / iw, d / ih);
+      ctx.drawImage(avatar, padX + (d - iw * scale) / 2, ay + (d - ih * scale) / 2, iw * scale, ih * scale);
+    } else {
+      ctx.fillStyle = header.accentHex;
+      ctx.fillRect(padX, ay, d, d);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = `600 46px ${family}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(header.name.slice(0, 1).toUpperCase(), padX + d / 2, ay + d / 2 + 2);
+    }
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(padX + d / 2, ay + d / 2, d / 2, 0, Math.PI * 2);
+    ctx.strokeStyle = rgba(header.accentHex, 0.55);
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    textX = padX + d + 28;
+  }
+
+  // REPOST mark on the right
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "right";
+  ctx.font = `700 30px ${family}`;
+  ctx.fillStyle = text;
+  const repostLabel = "REPOST";
+  const labelW = ctx.measureText(repostLabel).width;
+  const iconW = 44;
+  const iconGap = 16;
+  const repostLeft = HEADER_W - padX - labelW - iconGap - iconW;
+  ctx.fillText(repostLabel, HEADER_W - padX, bandY + bandH / 2 + 11);
+  drawRepostIcon(ctx, repostLeft, bandY + bandH / 2 - 16, iconW, 32, text);
+
+  // name + tagline, wrapped ONCE — this render decides the line breaks forever
+  ctx.textAlign = "left";
+  const maxTextW = repostLeft - 36 - textX;
+  ctx.font = `400 23px ${family}`;
+  const taglineLines = header.tagline ? wrapText(ctx, header.tagline, maxTextW, 2) : [];
+  const nameH = header.name ? 40 : 0;
+  const tagH = taglineLines.length * 32;
+  let cursorY = bandY + (bandH - nameH - tagH) / 2;
+  if (header.name) {
+    ctx.font = `650 34px ${family}`;
+    ctx.fillStyle = text;
+    let display = header.name;
+    while (display.length > 1 && ctx.measureText(display).width > maxTextW) display = display.slice(0, -1).trimEnd();
+    ctx.fillText(display, textX, cursorY + 32);
+    cursorY += nameH + 4;
+  }
+  ctx.font = `400 23px ${family}`;
+  ctx.fillStyle = muted;
+  for (const line of taglineLines) {
+    ctx.fillText(line, textX, cursorY + 23);
+    cursorY += 32;
+  }
+
+  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png"));
+}
+
+/**
+ * Stamp the stored header PNG over a generated slide — the same asset the
+ * model received as its locked-header reference, so the stamp blends with what
+ * the model painted while guaranteeing the header is identical on every slide.
+ */
+export async function composeSlideWithHeader(slideDataUrl: string, headerImage: HTMLImageElement): Promise<string> {
   const slide = await loadImageElement(slideDataUrl);
-  const W = slide.naturalWidth || 1088;
+  const W = slide.naturalWidth || HEADER_W;
   const H = slide.naturalHeight || 1360;
-  const s = W / 1088; // scale every metric off the canonical width
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d");
   if (!ctx) return slideDataUrl;
   ctx.drawImage(slide, 0, 0, W, H);
-
-  const bandH = Math.round(HEADER_BAND * 1360 * s);
-  const onDark = luminance(header.bandHex) < 0.55;
-  const text = onDark ? "#FFFFFF" : "#0B0C10";
-  const muted = onDark ? "rgba(255,255,255,0.62)" : "rgba(11,12,16,0.62)";
-  const family = (typeof document !== "undefined" && getComputedStyle(document.body).fontFamily) || "system-ui, sans-serif";
-
-  ctx.fillStyle = header.bandHex;
-  ctx.fillRect(0, 0, W, bandH);
-  ctx.fillStyle = rgba(header.accentHex, 0.65);
-  ctx.fillRect(0, bandH - 2 * s, W, 2 * s);
-
-  const padX = 52 * s;
-  const d = 66 * s;
-  const avatarY = (bandH - 2 * s - d) / 2;
-  let textX = padX;
-
-  if (avatar || header.name) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(padX + d / 2, avatarY + d / 2, d / 2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    if (avatar) {
-      // cover-fit the face into the circle
-      const iw = avatar.naturalWidth || 1;
-      const ih = avatar.naturalHeight || 1;
-      const scale = Math.max(d / iw, d / ih);
-      ctx.drawImage(avatar, padX + (d - iw * scale) / 2, avatarY + (d - ih * scale) / 2, iw * scale, ih * scale);
-    } else {
-      ctx.fillStyle = header.accentHex;
-      ctx.fillRect(padX, avatarY, d, d);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = `600 ${30 * s}px ${family}`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(header.name.slice(0, 1).toUpperCase(), padX + d / 2, avatarY + d / 2 + 1 * s);
-    }
-    ctx.restore();
-    // hairline ring so the cutout sits cleanly on the band
-    ctx.beginPath();
-    ctx.arc(padX + d / 2, avatarY + d / 2, d / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = rgba(header.accentHex, 0.5);
-    ctx.lineWidth = 1.5 * s;
-    ctx.stroke();
-    textX = padX + d + 18 * s;
-  }
-
-  ctx.textAlign = "right";
-  ctx.textBaseline = "alphabetic";
-  let rightW = 0;
-  if (header.handle) {
-    ctx.font = `600 ${19 * s}px ${family}`;
-    ctx.fillStyle = muted;
-    const label = `@${header.handle}`;
-    rightW = ctx.measureText(label).width;
-    ctx.fillText(label, W - padX, (bandH - 2 * s) / 2 + 7 * s);
-  }
-
-  ctx.textAlign = "left";
-  const maxTextW = W - padX - textX - (rightW ? rightW + 26 * s : 0);
-  const centerBaseline = (bandH - 2 * s) / 2 + 9 * s;
-  if (header.name && header.tagline) {
-    ctx.font = `650 ${25 * s}px ${family}`;
-    ctx.fillStyle = text;
-    ctx.fillText(ellipsize(ctx, header.name, maxTextW), textX, (bandH - 2 * s) / 2 - 5 * s);
-    ctx.font = `400 ${18 * s}px ${family}`;
-    ctx.fillStyle = muted;
-    ctx.fillText(ellipsize(ctx, header.tagline, maxTextW), textX, (bandH - 2 * s) / 2 + 21 * s);
-  } else if (header.name || header.tagline) {
-    const solo = header.name || header.tagline;
-    ctx.font = header.name ? `650 ${26 * s}px ${family}` : `450 ${21 * s}px ${family}`;
-    ctx.fillStyle = header.name ? text : muted;
-    ctx.fillText(ellipsize(ctx, solo, maxTextW), textX, centerBaseline);
-  }
-
+  ctx.drawImage(headerImage, 0, 0, W, (W * HEADER_H) / HEADER_W);
   return canvas.toDataURL("image/png");
 }

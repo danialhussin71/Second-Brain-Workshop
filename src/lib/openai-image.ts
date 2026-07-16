@@ -16,7 +16,7 @@ export async function generateImage(
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) return null;
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
-  const references = options.references?.slice(0, 6) || [];
+  const references = options.references?.slice(0, 7) || [];
   let response: Response;
   if (references.length) {
     const form = new FormData();
@@ -56,29 +56,29 @@ export function carouselSlidePrompt(args: {
   topic: string;
   brandContext?: string;
   referenceRoles?: string[];
-  /** Hex of the reserved header band — the real header is composited on after render. */
-  lockedHeaderHex?: string | null;
+  /** True when a pre-rendered locked-header reference image is attached. */
+  lockedHeader?: boolean;
 }): string {
   const role = args.index === 1 ? "cover" : args.index === args.total ? "closing" : "body";
-  const locked = args.lockedHeaderHex;
+  const locked = args.lockedHeader;
   return [
     `Create slide ${args.index} of ${args.total} for a premium 4:5 LinkedIn carousel about ${args.topic}.`,
     `This is a ${role} slide.`,
     args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
     args.referenceRoles?.length ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo. Use style references for palette, hierarchy, spacing, and recurring components; never copy their old slide copy.` : "",
     locked
-      ? `HEADER LOCK: The top 9% of the canvas is a reserved header band. Render that entire strip as one flat, uniform, solid ${locked} bar with absolutely nothing on it — no text, no name, no avatar, no logo, no gradient, no texture. The founder's real header is stamped onto that bar in post-production. Never draw your own name plate, handle, or recurring avatar anywhere on the slide; all slide content starts below the band.`
+      ? "HEADER LOCK: the reference labelled locked-header is the founder's exact slide header. Reproduce it 1:1 across the very top of the slide at full canvas width — it occupies exactly the top 15% of the canvas. Copy it precisely: identical layout, identical avatar, identical text with the identical line breaks, identical colors, identical REPOST mark. Do not restyle, rescale, rewrap, paraphrase, or reinterpret any part of it, and never invent a different header. Everything else on the slide starts below the header and must not overlap it."
       : "",
     `Render the following text exactly, with no paraphrasing or spelling changes. Headline: "${args.title}". Supporting copy: "${args.body}".`,
     `Art direction for this slide: ${args.art || "editorial visual metaphor with restrained detail"}.`,
     `Locked visual system for the entire deck: ${args.styleBible || "dark editorial background, crisp modern typography, restrained cyan and violet accents, generous spacing"}.`,
     locked
-      ? "Maintain safe margins below the header band, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
+      ? "Maintain safe margins below the header, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
       : "Maintain safe margins, strong typographic hierarchy, extremely legible text, consistent header/footer placement, and visual continuity with every other slide.",
     role === "cover" || role === "closing"
       ? "If a founder-face reference is attached, use that exact person as a polished photorealistic cutout or portrait. Do not alter identity, age, ethnicity, or facial structure."
       : locked
-        ? "Do not place the founder's face on this slide unless the art direction explicitly calls for it — the header band already carries the recurring avatar."
+        ? "Do not place the founder's face in the body of this slide unless the art direction explicitly calls for it — the locked header already carries the recurring avatar."
         : "Use the founder-face reference only for the small recurring avatar unless the visual direction explicitly requires the founder.",
     "If a brand-logo reference is attached, reproduce it accurately and do not redesign it.",
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",

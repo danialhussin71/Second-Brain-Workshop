@@ -20,6 +20,7 @@ import {
   Waveform,
 } from "@phosphor-icons/react";
 import type { BrandAsset, BrandColor, BrandKit } from "@/lib/brand-kit";
+import { carouselHeader, loadImageElement, renderBrandHeader } from "@/lib/carousel-header";
 
 type Busy = "load" | "save" | "face" | "logo" | "reference" | "analyze" | "remove" | null;
 
@@ -66,6 +67,33 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     window.dispatchEvent(new Event("jarvis-brand-updated"));
   };
 
+  /**
+   * Re-render the locked carousel header from the freshly saved kit and store
+   * it on Blob. Rendered once here — carousels then send it to the image model
+   * as an exact reference AND stamp it over each slide, so the header can
+   * never drift between slides. Best-effort: a header sync failure never
+   * blocks the save itself.
+   */
+  async function syncLockedHeader(next: BrandKit) {
+    try {
+      const spec = carouselHeader(next);
+      if (!spec) {
+        await fetch("/api/brand/header", { method: "DELETE" });
+        return;
+      }
+      const avatar = next.assets.face
+        ? await loadImageElement(assetUrl("face", Date.now())).catch(() => null)
+        : null;
+      const blob = await renderBrandHeader(spec, avatar);
+      if (!blob) return;
+      const form = new FormData();
+      form.append("file", new File([blob], "locked-header.png", { type: "image/png" }));
+      await fetch("/api/brand/header", { method: "POST", body: form });
+    } catch {
+      /* non-fatal — the next save will retry */
+    }
+  }
+
   async function save() {
     if (!kit) return;
     setBusy("save");
@@ -75,6 +103,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Save failed.");
       setKit(data.kit);
+      await syncLockedHeader(data.kit);
       notify("Brand system saved. Every marketing agent will use it.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
@@ -95,6 +124,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       if (!response.ok) throw new Error(data.error || "Upload failed.");
       setKit(data.kit);
       setBust((value) => value + 1);
+      if (kind === "face") await syncLockedHeader(data.kit);
       notify(kind === "reference" ? "Style reference added." : `${kind === "face" ? "Founder face" : "Logo"} updated.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -116,6 +146,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       if (!response.ok) throw new Error(data.error || "Could not remove asset.");
       setKit(data.kit);
       setBust((value) => value + 1);
+      if (kind === "face") await syncLockedHeader(data.kit);
       notify("Brand asset removed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not remove asset.");
