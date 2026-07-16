@@ -1,15 +1,9 @@
 /**
  * Locked carousel header — rendered ONCE (client-side canvas) when the brand
- * kit is saved, stored on Blob, then reused two ways for every carousel slide:
- *
- *  1. sent to GPT Image as a `locked-header` reference so the model reproduces
- *     it at the top of the slide and designs the artwork around it, and
- *  2. stamped over the top band after generation — the exact same PNG the
- *     model saw — so the header is pixel-identical across the deck even when
- *     the model's copy drifts.
- *
- * Because the header is rendered once, layout decisions (like whether the
- * tagline wraps to two lines) are made once and can never vary per slide.
+ * kit is saved, stored on Blob, and sent to GPT Image as a `locked-header`
+ * reference with every slide, with a prompt instruction to reproduce it
+ * exactly. Because the header is rendered once, layout decisions (like whether
+ * the tagline wraps to two lines) are made once and can never vary per slide.
  *
  * `carouselHeader` is pure and safe to import server-side; everything that
  * touches canvas/Image is client-only.
@@ -99,39 +93,40 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
   });
 }
 
-/** The repost glyph — two horizontal arrows forming a cycle. */
+/** The repost glyph — two horizontal arrows forming an open cycle. */
 function drawRepostIcon(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
-  const lw = 4.5;
-  const head = 9;
+  const lw = 5;
+  const head = 12;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = lw;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  const topY = y + h * 0.28;
-  const botY = y + h * 0.72;
-  // top arrow → right, with a small down-hook on the left
+  const topY = y + lw / 2;
+  const botY = y + h - lw / 2;
+  const hook = h * 0.4;
+  // top arrow → right, with a down-hook on the left
   ctx.beginPath();
-  ctx.moveTo(x, topY + h * 0.22);
-  ctx.lineTo(x, topY);
-  ctx.lineTo(x + w - head, topY);
+  ctx.moveTo(x + lw / 2, topY + hook);
+  ctx.lineTo(x + lw / 2, topY);
+  ctx.lineTo(x + w - head - 2, topY);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(x + w - head, topY - head * 0.85);
+  ctx.moveTo(x + w - head, topY - head * 0.72);
   ctx.lineTo(x + w, topY);
-  ctx.lineTo(x + w - head, topY + head * 0.85);
+  ctx.lineTo(x + w - head, topY + head * 0.72);
   ctx.closePath();
   ctx.fill();
-  // bottom arrow ← left, with a small up-hook on the right
+  // bottom arrow ← left, with an up-hook on the right
   ctx.beginPath();
-  ctx.moveTo(x + w, botY - h * 0.22);
-  ctx.lineTo(x + w, botY);
-  ctx.lineTo(x + head, botY);
+  ctx.moveTo(x + w - lw / 2, botY - hook);
+  ctx.lineTo(x + w - lw / 2, botY);
+  ctx.lineTo(x + head + 2, botY);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(x + head, botY - head * 0.85);
+  ctx.moveTo(x + head, botY - head * 0.72);
   ctx.lineTo(x, botY);
-  ctx.lineTo(x + head, botY + head * 0.85);
+  ctx.lineTo(x + head, botY + head * 0.72);
   ctx.closePath();
   ctx.fill();
 }
@@ -215,11 +210,12 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
   ctx.fillStyle = text;
   const repostLabel = "REPOST";
   const labelW = ctx.measureText(repostLabel).width;
-  const iconW = 44;
-  const iconGap = 16;
+  const iconW = 54;
+  const iconH = 34;
+  const iconGap = 20;
   const repostLeft = HEADER_W - padX - labelW - iconGap - iconW;
   ctx.fillText(repostLabel, HEADER_W - padX, bandY + bandH / 2 + 11);
-  drawRepostIcon(ctx, repostLeft, bandY + bandH / 2 - 16, iconW, 32, text);
+  drawRepostIcon(ctx, repostLeft, bandY + bandH / 2 - iconH / 2, iconW, iconH, text);
 
   // name + tagline, wrapped ONCE — this render decides the line breaks forever
   ctx.textAlign = "left";
@@ -245,23 +241,4 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
   }
 
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png"));
-}
-
-/**
- * Stamp the stored header PNG over a generated slide — the same asset the
- * model received as its locked-header reference, so the stamp blends with what
- * the model painted while guaranteeing the header is identical on every slide.
- */
-export async function composeSlideWithHeader(slideDataUrl: string, headerImage: HTMLImageElement): Promise<string> {
-  const slide = await loadImageElement(slideDataUrl);
-  const W = slide.naturalWidth || HEADER_W;
-  const H = slide.naturalHeight || 1360;
-  const canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return slideDataUrl;
-  ctx.drawImage(slide, 0, 0, W, H);
-  ctx.drawImage(headerImage, 0, 0, W, (W * HEADER_H) / HEADER_W);
-  return canvas.toDataURL("image/png");
 }
