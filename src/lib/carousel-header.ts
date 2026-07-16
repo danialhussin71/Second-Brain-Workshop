@@ -16,6 +16,9 @@ import type { BrandKit } from "./brand-kit";
 /** Native size of the rendered header strip (slide width × band height). */
 export const HEADER_W = 1088;
 export const HEADER_H = 208;
+/** Gap from the canvas top to the header elements — tune this to raise/lower them. */
+const HEADER_TOP_PAD = 44;
+const AVATAR_D = 104;
 
 export type CarouselHeader = {
   name: string;
@@ -164,16 +167,19 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
     ctx.shadowOffsetY = 0;
   };
 
-  // same vertical rhythm the band version used, so proportions stay familiar
-  const bandY = 16;
   const padX = 56;
-  const bandH = HEADER_H - bandY;
+  // Vertical placement: HEADER_TOP_PAD is the gap from the canvas top to the
+  // tallest element (the avatar) — the single number to tune if the header
+  // should ride higher or lower. Everything else centres on the same line.
+  // (The old band render offset this by 16px to expose the band's rounded top
+  // corner; with no band that offset only made the strip bottom-heavy.)
+  const centerY = HEADER_TOP_PAD + AVATAR_D / 2;
   let textX = padX;
 
-  // avatar (or accent initial) in a circle, vertically centered in the strip
+  // avatar (or accent initial) in a circle, on the shared centre line
   if (avatar || header.name) {
-    const d = 104;
-    const ay = bandY + (bandH - d) / 2;
+    const d = AVATAR_D;
+    const ay = centerY - d / 2;
     // shadowed disc first — the clipped image would clip its own shadow away
     shadow();
     ctx.beginPath();
@@ -219,8 +225,8 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
   const iconH = 34;
   const iconGap = 20;
   const repostLeft = HEADER_W - padX - labelW - iconGap - iconW;
-  ctx.fillText(repostLabel, HEADER_W - padX, bandY + bandH / 2 + 11);
-  drawRepostIcon(ctx, repostLeft, bandY + bandH / 2 - iconH / 2, iconW, iconH, text);
+  ctx.fillText(repostLabel, HEADER_W - padX, centerY + 11);
+  drawRepostIcon(ctx, repostLeft, centerY - iconH / 2, iconW, iconH, text);
 
   // name + tagline, wrapped ONCE — this render decides the line breaks forever
   shadow();
@@ -230,7 +236,7 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
   const taglineLines = header.tagline ? wrapText(ctx, header.tagline, maxTextW, 2) : [];
   const nameH = header.name ? 40 : 0;
   const tagH = taglineLines.length * 32;
-  let cursorY = bandY + (bandH - nameH - tagH) / 2;
+  let cursorY = centerY - (nameH + tagH) / 2;
   if (header.name) {
     ctx.font = `650 34px ${family}`;
     ctx.fillStyle = text;
