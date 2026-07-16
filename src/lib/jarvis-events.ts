@@ -59,9 +59,14 @@ export type CarouselArtifactData = {
   styleBible?: string;
 };
 
+/** The retention structure every short-form script follows, beat by beat. */
+export type ReelBeatRole = "hook" | "rehook" | "body" | "payoff" | "cta";
+
 export type ReelBeat = {
+  role: ReelBeatRole;
   timecode: string;
   duration_seconds: number;
+  /** The spoken words, ONE SENTENCE PER LINE — each line is one spoken beat. */
   spoken: string;
   visual: string;
   onscreen_text: string;

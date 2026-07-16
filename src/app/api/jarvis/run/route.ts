@@ -106,6 +106,29 @@ const CAROUSEL_SCHEMA = {
   },
 } as const;
 
+/**
+ * The spoken-script craft rules, shared by every video producer. Retention is
+ * won or lost at the sentence level, so these are stated as hard constraints
+ * rather than style advice.
+ */
+const SCRIPT_CRAFT =
+  "HARD WRITING RULES, non-negotiable:\n" +
+  "Readability grade 3 or below. If a 9-year-old would stumble on a sentence, rewrite it.\n" +
+  "12 words maximum per sentence, 6-8 on average. Vary the rhythm: some lines 3 words, some 10. Never three long lines in a row.\n" +
+  "ONE SENTENCE PER LINE, separated by a newline. Each line is one spoken breath.\n" +
+  "Spoken English only. Always use contractions (it's, don't, here's). Write how people talk, not how they write.\n" +
+  "Concrete over abstract: 'your notes from March' beats 'your past information'. Numbers beat adjectives.\n" +
+  "Active voice only.\n" +
+  "The spoken field contains ONLY the words the creator says. No stage directions, no labels, no headers, no visual notes.\n\n" +
+  "BANNED, instant rewrite if any appear:\n" +
+  "Punctuation: em dashes and semicolons.\n" +
+  "Constructions: 'It's not just X, it's Y'; 'not because X, but because Y'; any contradiction parallel; 'Imagine a world where'; 'In today's fast-paced world'; 'Here's the thing:' as a crutch (once maximum); stacked rhetorical questions (one question maximum in the whole script); rule-of-three lists with parallel structure ('faster, smarter, better').\n" +
+  "Words: delve, unleash, unlock, harness, elevate, game-changer, revolutionize, seamless, robust, leverage as a verb, dive into, landscape, realm, tapestry, journey, empower, supercharge, cutting-edge, in essence, ultimately, furthermore, moreover, additionally, 'the best part?', 'let that sink in'.\n" +
+  "Vibes: anything that sounds like a LinkedIn post, a press release, or a motivational poster.\n" +
+  "Also apply every banned word and phrase named in the founder's voice guide.\n\n" +
+  "VOICE: use the founder's signature phrases at least twice, placed naturally, never forced into the hook. Match their sentence rhythm, their conviction level, and their vocabulary tier — never introduce a word they would not say out loud. The script must pass this test: their existing audience reads it and thinks 'yes, that's them' without seeing a name.\n\n" +
+  "SELF-CHECK silently before answering, and rewrite until all pass: Would the hook stop a stranger mid-scroll? If a competitor could post the same first line, sharpen it. Read every line out loud in your head — rewrite anything you stumble on. Is every stat and claim traceable to the supplied context? Delete what you cannot trace. Is any sentence above grade 3, or over 12 words? Simplify it. Over budget? Cut the weakest beat, never the CTA. Any banned word, contradiction parallel, or em dash? Remove it. Does it sound like the founder, or like a generic script?";
+
 const REEL_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -128,19 +151,24 @@ const REEL_SCHEMA = {
     },
     beats: {
       type: "array",
-      minItems: 3,
-      maxItems: 16,
+      minItems: 5,
+      maxItems: 7,
+      description: "The script in order: exactly one hook, one rehook, one to three body beats, one payoff, one cta.",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["timecode", "duration_seconds", "spoken", "visual", "onscreen_text", "edit"],
+        required: ["role", "timecode", "duration_seconds", "spoken", "visual", "onscreen_text", "edit"],
         properties: {
+          role: { type: "string", enum: ["hook", "rehook", "body", "payoff", "cta"] },
           timecode: { type: "string" },
           duration_seconds: { type: "integer" },
-          spoken: { type: "string" },
-          visual: { type: "string" },
-          onscreen_text: { type: "string" },
-          edit: { type: "string" },
+          spoken: {
+            type: "string",
+            description: "Only the words the creator says. ONE SENTENCE PER LINE, separated by a newline — each line is one spoken breath. 12 words maximum per sentence, 6-8 on average. No labels, no stage directions, no visual notes.",
+          },
+          visual: { type: "string", description: "Production note (never spoken): what is on screen for this beat." },
+          onscreen_text: { type: "string", description: "Production note (never spoken): the text overlay for this beat." },
+          edit: { type: "string", description: "Production note (never spoken): the edit instruction for this beat." },
         },
       },
     },
@@ -177,7 +205,7 @@ const LONGFORM_SCHEMA = {
       required: ["concept", "text"],
       properties: { concept: { type: "string" }, text: { type: "string" } },
     },
-    intro: { type: "string" },
+    intro: { type: "string", description: "The fully scripted opening — only the words the creator says. ONE SENTENCE PER LINE, separated by a newline." },
     payoff_map: { type: "array", items: { type: "string" } },
     chapters: {
       type: "array",
@@ -192,9 +220,12 @@ const LONGFORM_SCHEMA = {
           timecode: { type: "string" },
           title: { type: "string" },
           objective: { type: "string" },
-          script: { type: "string" },
-          visuals: { type: "array", items: { type: "string" } },
-          retention_device: { type: "string" },
+          script: {
+            type: "string",
+            description: "Only the words the creator says for this chapter. ONE SENTENCE PER LINE, separated by a newline — each line is one spoken breath. No labels, no stage directions, no visual notes.",
+          },
+          visuals: { type: "array", items: { type: "string" }, description: "Production notes (never spoken): the shots for this chapter." },
+          retention_device: { type: "string", description: "Production note (never spoken): the device that carries the viewer into the next chapter." },
         },
       },
     },
@@ -544,11 +575,20 @@ async function runReel(
     signal,
     maxOutputTokens: 16000,
     instructions:
-      "You are the founder's senior short-form video strategist, scriptwriter, and editor. Return a finished production script, never an outline. " +
-      `The requested runtime is exactly ${duration} seconds. Keep the total spoken copy inside the guide's word budget and set duration_seconds to ${duration}. ` +
-      "Silently audition five hook directions before selecting one. The hook object is the metadata summary of the first beat: hook.spoken must exactly match beats[0].spoken, and its visual and on-screen text must exactly match the first beat too. " +
-      "Give every beat a real timecode, spoken copy, a feasible visual, additive on-screen text, and an edit instruction. Ensure beat durations cover the runtime. " +
-      "Use only factual claims supported by supplied context. grounding may contain only exact titles of supplied notes.\n\n" +
+      "You are a short-form video scriptwriter with 15+ years of experience writing scripts that have generated over 2 billion combined views across TikTok, Reels, and YouTube Shorts. You understand retention psychology at the sentence level: every line either earns the next second of attention or loses the viewer forever. " +
+      "You write scripts that sound like a real person talking to one friend. Never like a brand. Never like AI. Return a finished production script, never an outline.\n\n" +
+      "SCRIPT STRUCTURE — the beats array follows this exact flow, one beat per role, in order:\n" +
+      "1. role 'hook' (1-2 lines): silently audition five hook directions, then commit to the strongest. Once chosen it is locked — you may tighten it by removing filler words, nothing more. It must work with zero context: a viewer scrolling at 2am must stop.\n" +
+      "2. role 'rehook' (1-2 lines): immediately raise the stakes or deepen the curiosity the hook created. A shocking stat from the supplied context, a bold claim, or a 'here's what nobody tells you' tension line. Never explain the hook. Escalate it.\n" +
+      "3. role 'body' (one to three beats, three maximum): pull ONLY from the supplied context. Every claim and stat must exist there, copied exactly. No invented numbers, no invented studies. Structure each beat tension, then insight, then proof. Use contrast moments — 'everyone thinks X, but here's the reality' — they are the highest-retention moments you have. End body beats with a micro-transition that opens a loop: 'But here's the part that surprised me.' / 'And it gets weirder.' / 'That's not even the crazy part.'\n" +
+      "4. role 'payoff' (1-2 lines): deliver the promise the hook made. The viewer must feel they got the thing they stayed for. It is the single most useful, specific, or surprising insight in the material. Not a summary. A gift.\n" +
+      "5. role 'cta' (1-2 lines): ONE ask. Never two. Never 'like, comment, share, and follow'. It must connect to the content, not bolt onto it: a specific next action plus a specific reason tied to the topic. Good: 'Comment BRAIN and I'll send you my setup guide.' Bad: 'Don't forget to like and subscribe.'\n\n" +
+      `The requested runtime is exactly ${duration} seconds. Keep the total spoken copy inside the guide's word budget and set duration_seconds to ${duration}. Give every beat a real timecode and a duration; the durations must cover the runtime. ` +
+      "The hook object is the metadata mirror of the first beat: hook.spoken must exactly match beats[0].spoken, and its visual and on-screen text must match that beat too. The cta field must exactly match the spoken copy of the cta beat. " +
+      "visual, onscreen_text, and edit are PRODUCTION notes shown on a separate tab — never let them leak into spoken. " +
+      "grounding may contain only exact titles of supplied notes.\n\n" +
+      SCRIPT_CRAFT +
+      "\n\n" +
       (guide ? `AUTHORITATIVE REEL PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
     input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
   });
@@ -676,11 +716,17 @@ async function runLongform(
     signal,
     maxOutputTokens: 30000,
     instructions:
-      "You are the founder's senior long-form video strategist, YouTube scriptwriter, and retention editor. Return a complete, recordable production script, not an outline or a summary. " +
+      "You are a long-form video scriptwriter and retention editor with 15+ years of experience writing scripts that have generated billions of views. You understand retention psychology at the sentence level: every line either earns the next second of attention or loses the viewer forever. " +
+      "You write scripts that sound like a real person talking to one friend. Never like a brand. Never like AI. Return a complete, recordable production script, not an outline or a summary. " +
       `Build for ${minutes} minutes and roughly ${targetWords} spoken words, within ten percent. Set target_minutes to ${minutes}. ` +
-      "Choose packaging first, map honest payoffs, then write timecoded chapters containing the exact spoken script. The intro must be fully scripted and should not be duplicated in chapter copy. " +
-      "Visuals must be practical and specific. Every transition needs a retention device. The final lines must land the payoff and bridge into one specific next video without outro language. " +
+      "Choose packaging first, map honest payoffs, then write timecoded chapters containing the exact spoken script. " +
+      "The intro carries the hook: silently audition five hook directions and commit to the strongest, then confirm the click promise and escalate the curiosity rather than explaining it. Do not duplicate the intro in chapter copy. " +
+      "Inside a chapter, structure each movement tension, then insight, then proof, and pull every claim ONLY from the supplied context, copied exactly. Use contrast moments — 'everyone thinks X, but here's the reality' — they are the highest-retention moments you have. Close each chapter with a micro-transition that opens a loop into the next one. " +
+      "The final lines must land the payoff — the single most useful, specific, or surprising insight in the material, a gift rather than a summary — and bridge into one specific next video without outro language. " +
+      "The chapter script field and the intro contain ONLY the words the creator says. visuals and retention_device are PRODUCTION notes shown on a separate tab — never let them leak into the spoken script. Visuals must be practical and specific. " +
       "Use only factual claims supported by supplied context. grounding may contain only exact titles of supplied notes.\n\n" +
+      SCRIPT_CRAFT +
+      "\n\n" +
       (guide ? `AUTHORITATIVE LONG-FORM PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
     input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
   });
