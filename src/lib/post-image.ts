@@ -114,7 +114,9 @@ export function buildPostImagePrompt(args: {
     parts.push(`AUTHORITATIVE BRAND KIT — weave its palette, typography character, and mood into the image naturally:\n${args.brandContext.trim()}`);
   }
   if (args.referenceRoles?.length) {
-    parts.push(`Reference image legend, in upload order: ${args.referenceRoles.join("; ")}. Use style references for palette and treatment; reproduce any real logo accurately; never copy another brand's old copy.`);
+    parts.push(
+      `Reference image legend, in upload order: ${args.referenceRoles.join("; ")}. Reproduce any real logo accurately.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, treatment and finish — the look. Take NOTHING it says or is about: its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear here in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone.`,
+    );
   }
 
   parts.push(PHOTOREALISM);

@@ -267,8 +267,68 @@ export function stripHeaderDirectives(spec: string): string {
     .join("\n\n");
 }
 
+/** A sentence carrying literal content lifted off a reference image. */
+const BORROWED_CONTENT = new RegExp(
+  [
+    // literal copy the model was told to reproduce
+    "(?:reads?|reading|says?|stating|states|spelling out|verbatim|word[- ]for[- ]word|same wording|exact (?:copy|wording|text|words))\\b",
+    "(?:headline|title|label|button|caption|subtitle|banner|badge|sticker|copy|text)\\s+(?:reads?|says?|is|should (?:read|say))\\b",
+    // times, dates, prices, contact details
+    "\\b\\d{1,2}\\s*(?::\\s*\\d{2})?\\s*(?:am|pm)\\b",
+    // Colon only, never a period: "0.85 opacity" and "1.50 line height" are style.
+    "\\b\\d{1,2}:\\d{2}\\b",
+    "\\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:uary|ruary|ch|il|e|y|ust|tember|ober|ember)?\\s+\\d{1,2}\\b",
+    "\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
+    "\\b(?:mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)(?:day)?\\s+(?:at|the|\\d)",
+    // Dashes need a full year, or a "12-16-24 px" spacing scale reads as a date.
+    "\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b",
+    "\\b\\d{1,2}-\\d{1,2}-\\d{4}\\b",
+    "\\b\\d{4}-\\d{2}-\\d{2}\\b",
+    "[$£€]\\s?\\d", "\\b\\d+\\s*(?:usd|eur|gbp|inr)\\b",
+    "\\bhttps?://", "\\bwww\\.", "\\b[a-z0-9-]+\\.(?:com|net|org|io|co|ly|app|link)\\b",
+    "\\b[\\w.+-]+@[\\w-]+\\.[a-z]{2,}\\b",
+    // event / campaign furniture — never part of a visual system
+    "\\b(?:zoom|google meet|ms teams|webinar|livestream|live stream|rsvp|register(?:ing|ed|ation)?|sign[- ]?up|tickets?|early bird|seats?|venue|doors open|admission|agenda|speakers?|panelists?|keynote|host(?:ed|ing)? by|join us|save the date|limited time|deadline|discount|coupon|promo code|call now|book (?:now|your))\\b",
+  ].join("|"),
+  "i",
+);
+/** A block whose whole subject is borrowed content (e.g. an "Event details: …" paragraph). */
+const BORROWED_BLOCK =
+  /^\s*(?:event|session|webinar|workshop|offer|promo(?:tion)?|campaign|ticket|pricing|price|contact|schedule|agenda|date|time|location|venue|registration|cta copy|copy|messaging|content)\s*(?:details?|info(?:rmation)?|block|panel|strip|section|line)?\s*[:\-—]/i;
+
+/**
+ * Remove content borrowed from a reference image out of a learned style spec.
+ *
+ * Founders upload whatever they have to hand — an event poster, a launch
+ * graphic, a client's deck — and mean "make it look like this". The extractor
+ * used to write what it saw into the spec as a "recurring component", so an
+ * uploaded poster taught the kit that every slide carries a Zoom link and a
+ * start time. The spec then arrives marked AUTHORITATIVE, ahead of and far more
+ * specific than the legend's "use references for style only", so it wins.
+ *
+ * Extraction no longer transcribes content, but specs learned before that fix
+ * are already saved, so scrub on the way into every prompt as well.
+ */
+export function stripBorrowedContent(spec: string): string {
+  return spec
+    .split(/\n\s*\n/)
+    .map((block) => {
+      if (BORROWED_BLOCK.test(block)) return "";
+      return block
+        .split(/(?<=\.)\s+/)
+        .filter((sentence) => !BORROWED_CONTENT.test(sentence))
+        .join(" ")
+        .trim();
+    })
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
+}
+
 export function brandKitContext(kit: BrandKit, options: { suppressHeader?: boolean } = {}): string {
-  const styleSpec = options.suppressHeader ? stripHeaderDirectives(kit.styleSpec) : kit.styleSpec;
+  // Borrowed content is never wanted, in any format, so it is scrubbed
+  // unconditionally — unlike the header, which only yields to the overlay.
+  const learned = stripBorrowedContent(kit.styleSpec);
+  const styleSpec = options.suppressHeader ? stripHeaderDirectives(learned) : learned;
   const palette = kit.colors.filter((color) => color.hex).map((color) => `${color.name} ${color.hex}`).join(", ");
   const references = [
     kit.assets.face ? "founder face" : "",

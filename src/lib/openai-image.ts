@@ -1,4 +1,4 @@
-import { stripHeaderDirectives } from "./brand-kit";
+import { stripBorrowedContent, stripHeaderDirectives } from "./brand-kit";
 import type { CarouselImageQuality } from "./carousel-settings";
 
 const GENERATE_ENDPOINT = "https://api.openai.com/v1/images/generations";
@@ -64,7 +64,10 @@ export function carouselSlidePrompt(args: {
   const locked = args.lockedHeader;
   // Scrub here rather than at the call site: the header reservation only holds
   // if NOTHING else in the prompt asks for a header, so no caller may opt out.
-  const styleBible = locked ? stripHeaderDirectives(args.styleBible || "") : (args.styleBible || "");
+  // The art director reads the kit's learned spec, so borrowed content can reach
+  // the bible even when the kit itself has been scrubbed — scrub it here too.
+  const cleaned = stripBorrowedContent(args.styleBible || "");
+  const styleBible = locked ? stripHeaderDirectives(cleaned) : cleaned;
   // Ordering follows OpenAI's image prompting guide: scene/layout → subject →
   // details → constraints, in short labelled segments, with the hard exclusions
   // restated last so recency reinforces them.
@@ -76,7 +79,7 @@ export function carouselSlidePrompt(args: {
       : "",
     args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
     args.referenceRoles?.length
-      ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo. Use style references for palette, typography, hierarchy and spacing only; never copy their slide copy${locked ? ", and ignore the identity/profile strip along the top of any style reference — that region is intentionally reproduced as plain background here" : ""}.`
+      ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, hierarchy, spacing and finish — the look. Take NOTHING it says or is about. Its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear on this slide in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone; this slide is about ${args.topic} and nothing else. The only words on this slide are the headline and supporting copy given above${locked ? ". Ignore the identity/profile strip along the top of any style reference — that region is intentionally reproduced as plain background here" : ""}.`
       : "",
     `Render the following text exactly, with no paraphrasing or spelling changes. Headline: "${args.title}". Supporting copy: "${args.body}".`,
     `Art direction for this slide: ${args.art || "editorial visual metaphor with restrained detail"}.`,
@@ -91,8 +94,11 @@ export function carouselSlidePrompt(args: {
         : "Use the founder-face reference only for the small recurring avatar unless the visual direction explicitly requires the founder.",
     "If a brand-logo reference is attached, reproduce it accurately and do not redesign it.",
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",
-    // Restated last: the single most-violated constraint, in the plain
-    // prohibition form that measurably suppresses stray text/marks.
+    // Restated last: the two constraints references push hardest against, in the
+    // plain prohibition form that measurably suppresses stray text/marks.
+    args.referenceRoles?.length
+      ? "FINAL CHECK — the only words rendered anywhere on this slide are the headline and supporting copy quoted above. No date, no time, no price, no link, no QR code, no button label, no registration or event line, no borrowed slogan, no extra sentence. Whatever a style reference happens to show, none of its wording reaches this slide."
+      : "",
     locked
       ? "FINAL CHECK — the top 15% of the canvas: background only. No text, no words, no lettering, no name, no handle, no portrait, no avatar, no circular photo, no icon, no badge, no logo, no watermark, no bar, no banner, no panel, no divider line anywhere in that strip. It must look like an untouched extension of the background."
       : "",
