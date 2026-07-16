@@ -8,12 +8,15 @@ import {
   type JarvisEvent,
   type JarvisNodeId,
   type LongformArtifactData,
+  type NewsletterArtifactData,
   type PicturePostArtifactData,
   type ReelArtifactData,
   type TextPostArtifactData,
 } from "@/lib/jarvis-events";
 import { RICH_RESPONSE_SCHEMA, type RichResponse } from "@/lib/rich-response";
 import { brandKitContext, getBrandKit } from "@/lib/brand-kit";
+import { buildNewsletterHtml, newsletterAccent, newsletterImagePrompt, type NewsletterContent } from "@/lib/newsletter";
+import { generateImage, imageModelConfigured } from "@/lib/openai-image";
 import { STYLE_PRESETS } from "@/lib/post-image";
 import { isRecallQuery, isSessionNote, recordSession } from "@/lib/session-memory";
 
@@ -218,6 +221,54 @@ const TEXTPOST_SCHEMA = {
     grounding: { type: "array", items: { type: "string" } },
   },
 } as const;
+
+const NEWSLETTER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["kicker", "subject", "preview", "title", "intro", "sections", "quote", "cta", "signoff", "ps", "heroPrompt", "inlinePrompt"],
+  properties: {
+    kicker: { type: "string", description: "A short eyebrow label shown above the title, e.g. 'The Founder's Note' or 'Weekly note'." },
+    subject: { type: "string", description: "The email subject line — UNDER 42 characters, specific, curiosity- or benefit-driven, never clickbait, and never repeated by the preview." },
+    preview: { type: "string", description: "Inbox preview text (~60-90 chars) that complements the subject." },
+    title: { type: "string", description: "The headline shown at the top of the email body — short and punchy." },
+    intro: { type: "string", description: "A personal opening, 2-3 SHORT paragraphs (blank line between each), written to ONE reader in the founder's voice." },
+    sections: {
+      type: "array",
+      minItems: 2,
+      maxItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["heading", "body"],
+        properties: {
+          heading: { type: "string", description: "3-7 word section heading." },
+          body: { type: "string", description: "1-3 short paragraphs of plain prose. NO markdown bold. A '- ' bullet list or a '### ' subheading is allowed ONLY where it genuinely earns its place. Do not over-format." },
+        },
+      },
+    },
+    quote: { type: ["string", "null"], description: "ONE short, punchy pull-quote (a single memorable sentence) to feature centered, or null if none fits." },
+    cta: {
+      type: "object",
+      additionalProperties: false,
+      required: ["label", "url"],
+      properties: {
+        label: { type: "string", description: "A VERY short button label — 2-4 words, max ~24 characters — so it fits on ONE line, e.g. 'Reply and tell me'." },
+        url: { type: "string", description: "A real URL, or '#' if none was given." },
+      },
+    },
+    signoff: { type: "string", description: "The sign-off line, e.g. 'Talk soon, Malik'." },
+    ps: { type: ["string", "null"], description: "The P.S.: ONE line after the sign-off that restates the single action a different way or adds intrigue. Not a summary. Write the sentence only — the template adds the 'P.S.' label, so do not start with 'P.S.'. null only if it genuinely adds nothing." },
+    heroPrompt: { type: "string", description: "A SPECIFIC, thought-out visual CONCEPT for the hero illustration that captures THIS issue's core idea. Name the literal subject/objects in the frame AND the metaphor they convey — e.g. for 'stand out', 'a single warm-lit lighthouse rising above a calm sea of identical small gray boats'. A concrete designed scene, never a vague mood or generic office/business stock." },
+    inlinePrompt: { type: ["string", "null"], description: "An optional SECOND concept — a smaller supporting illustration tied to one specific section, described just as concretely as the hero — or null for none." },
+  },
+} as const;
+
+type NewsletterDraft = Omit<NewsletterContent, "quote" | "ps" | "heroImage" | "inlineImage"> & {
+  quote: string | null;
+  ps: string | null;
+  heroPrompt: string;
+  inlinePrompt: string | null;
+};
 
 const PICTUREPOST_SCHEMA = {
   type: "object",
@@ -514,6 +565,97 @@ async function runReel(
   };
 }
 
+/**
+ * Newsletter specialist: write the issue from the founder's playbook and voice,
+ * art-direct up to two light editorial illustrations, then fill the brand-DNA
+ * HTML template. Ships a real, self-contained email — not a markdown draft.
+ */
+async function runNewsletter(
+  instruction: string,
+  notes: OwnerNote[],
+  research: Contribution | undefined,
+  emit: Emit,
+  signal: AbortSignal
+): Promise<Contribution> {
+  emit({ type: "agent.activate", node: "newsletter", label: "Newsletter producer is online", at: now() });
+  emit({ type: "agent.status", node: "newsletter", status: "Planning the issue in the founder's voice", at: now() });
+  const guide = await getContentGuide({ format: "newsletter", task: `${instruction}\n${research?.output || ""}` });
+  if (guide) emit({ type: "agent.tool", node: "newsletter", tool: "Content guide", detail: guide.title, at: now() });
+  emit({ type: "agent.tool", node: "newsletter", tool: "Voice DNA", detail: "Uploaded brand and knowledge notes", at: now() });
+
+  const draft = await openAIJson<NewsletterDraft>({
+    name: "newsletter_issue",
+    schema: NEWSLETTER_SCHEMA,
+    signal,
+    maxOutputTokens: 16000,
+    instructions:
+      "You are the founder's newsletter specialist. Write ONE complete email newsletter in the founder's EXACT voice. " +
+      "It must read like a private note to ONE person, not a broadcast: personal, specific, genuinely useful. Solve one real problem or shift one belief, then sell softly with a single clear CTA at the end. " +
+      "The TITLE is the hook, the INTRO carries the hook plus the tension (the exact problem the reader feels this week), the SECTIONS deliver the one thing and the proof, the CTA is one line, one action, phrased like a friend asking a favor. Always finish with a P.S. that restates the action a different way or adds intrigue. " +
+      "Keep the subject UNDER 42 characters. Use 2-4 scannable sections; a bullet list or '### ' subheading ONLY where it earns its place. A pull-quote is OPTIONAL, only if one sentence truly deserves the spotlight. " +
+      "Short paragraphs, plain prose, NO markdown bold in the body, no corporate filler, no hashtag spam. Never invent metrics, quotes, client names, or results — use only what the supplied context supports. " +
+      "Also act as ART DIRECTOR: invent ONE concrete, purpose-built visual CONCEPT for the hero (and optionally a second for inline) that visualizes a real idea from THIS specific newsletter — a metaphor or scene with specific objects, the kind a brand studio would design. Say exactly what is in the frame. Never generic office/laptop/handshake stock, never a vague mood.\n\n" +
+      (guide ? `AUTHORITATIVE NEWSLETTER PLAYBOOK, follow every applicable rule:\n${guide.body}` : ""),
+    input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
+  });
+
+  emit({ type: "agent.output", node: "newsletter", summary: `“${draft.subject}”`, at: now() });
+
+  const content: NewsletterContent = {
+    kicker: draft.kicker,
+    subject: draft.subject,
+    preview: draft.preview,
+    title: draft.title,
+    intro: draft.intro,
+    sections: draft.sections,
+    quote: draft.quote ?? undefined,
+    cta: draft.cta,
+    signoff: draft.signoff,
+    ps: draft.ps ?? undefined,
+  };
+
+  // Two light editorial assets, rendered concurrently to stay inside the budget.
+  const brand = await getBrandKit();
+  if (imageModelConfigured() && draft.heroPrompt) {
+    emit({ type: "agent.status", node: "newsletter", status: "Rendering image assets · gpt-image", at: now() });
+    emit({ type: "agent.tool", node: "newsletter", tool: "gpt-image", detail: draft.inlinePrompt ? "2 light assets" : "1 light asset", at: now() });
+    const accent = newsletterAccent(brand);
+    const [hero, inlineArt] = await Promise.all([
+      generateImage(newsletterImagePrompt(draft.heroPrompt, accent), { size: "1536x1024" }).catch(() => null),
+      draft.inlinePrompt
+        ? generateImage(newsletterImagePrompt(draft.inlinePrompt, accent), { size: "1024x1024" }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    content.heroImage = hero ?? undefined;
+    content.inlineImage = inlineArt ?? undefined;
+  }
+
+  const html = buildNewsletterHtml(brand, content);
+  const data: NewsletterArtifactData = { subject: content.subject, preview: content.preview, html, grounding: [] };
+  emit({ type: "artifact", kind: "newsletter", data, at: now() });
+  emit({ type: "agent.status", node: "newsletter", status: "Newsletter ready", at: now() });
+  emit({ type: "agent.report", from: "newsletter", to: "content", summary: "Newsletter delivered", at: now() });
+
+  // Plain-text rendering of the issue, so session memory can quote it verbatim.
+  const plain = [
+    content.title,
+    content.intro,
+    ...content.sections.map((s) => `${s.heading}\n${s.body}`),
+    content.quote ? `“${content.quote}”` : "",
+    `${content.cta.label} — ${content.cta.url}`,
+    content.signoff,
+    content.ps ? `P.S. ${content.ps}` : "",
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    agent: "newsletter",
+    title: content.subject,
+    summary: `Newsletter “${content.subject}” ready to send`,
+    output: plain,
+    source_titles: [],
+  };
+}
+
 async function runLongform(
   instruction: string,
   notes: OwnerNote[],
@@ -646,6 +788,7 @@ async function runFormat(
   if (format === "carousel") return runCarousel(instruction, notes, research, emit, signal);
   if (format === "reels") return runReel(instruction, notes, research, emit, signal);
   if (format === "longform") return runLongform(instruction, notes, research, emit, signal);
+  if (format === "newsletter") return runNewsletter(instruction, notes, research, emit, signal);
   emit({ type: "agent.activate", node: format, label: `${node(format).title} producer is online`, at: now() });
   emit({ type: "agent.status", node: format, status: "Matching the founder's voice and playbook", at: now() });
   const guide = await getContentGuide({ format, task: `${instruction}\n${research?.output || ""}` });
@@ -743,7 +886,7 @@ export async function POST(request: Request) {
         }
 
         const onlyFormat = plan.assignments.length === 1 && plan.assignments[0].plan.length === 1 ? plan.assignments[0].plan[0] : null;
-        const dedicatedArtifactOnly = onlyFormat === "carousel" || onlyFormat === "reels" || onlyFormat === "longform" || onlyFormat === "text" || onlyFormat === "picture";
+        const dedicatedArtifactOnly = onlyFormat === "carousel" || onlyFormat === "reels" || onlyFormat === "longform" || onlyFormat === "text" || onlyFormat === "picture" || onlyFormat === "newsletter";
         let synthesized: RichResponse | undefined;
         if (!dedicatedArtifactOnly) {
           emit({ type: "agent.status", node: "kronos", status: "Assembling the final briefing", at: now() });

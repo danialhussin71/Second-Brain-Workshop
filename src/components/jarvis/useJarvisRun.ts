@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { drainEvents, type CarouselArtifactData, type JarvisEvent, type JarvisNodeId, type LongformArtifactData, type PicturePostArtifactData, type ReelArtifactData, type TextPostArtifactData } from "@/lib/jarvis-events";
+import { drainEvents, type CarouselArtifactData, type JarvisEvent, type JarvisNodeId, type LongformArtifactData, type NewsletterArtifactData, type PicturePostArtifactData, type ReelArtifactData, type TextPostArtifactData } from "@/lib/jarvis-events";
 import { node } from "@/lib/org";
 import type { RichResponse } from "@/lib/rich-response";
 
@@ -22,6 +22,7 @@ export type JarvisRunState = {
   carouselArtifact?: CarouselArtifactData;
   reelArtifact?: ReelArtifactData;
   longformArtifact?: LongformArtifactData;
+  newsletterArtifact?: NewsletterArtifactData;
   textPostArtifact?: TextPostArtifactData;
   picturePostArtifact?: PicturePostArtifactData;
   error?: string;
@@ -78,6 +79,7 @@ function reduce(state: JarvisRunState, event: JarvisEvent, id: () => number): Ja
       if (event.kind === "carousel") return add({ carouselArtifact: event.data });
       if (event.kind === "reel") return add({ reelArtifact: event.data });
       if (event.kind === "longform") return add({ longformArtifact: event.data });
+      if (event.kind === "newsletter") return add({ newsletterArtifact: event.data });
       if (event.kind === "text") return add({ textPostArtifact: event.data });
       if (event.kind === "picture") return add({ picturePostArtifact: event.data });
       return state;
