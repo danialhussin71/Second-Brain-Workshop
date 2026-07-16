@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       art: [slide.visual, slide.layout ? `Layout: ${slide.layout}.` : "", slide.logos?.length ? `Use accurate official marks for: ${slide.logos.join(", ")}.` : ""].filter(Boolean).join(" "),
       styleBible: payload.styleBible || "",
       topic: payload.topic || slide.title,
-      brandContext: brandKitContext(brand),
+      brandContext: brandKitContext(brand, { suppressHeader: lockedHeader }),
       referenceRoles: brandReferences.map((reference, index) => `reference ${index + 1} = ${reference.role}`),
       lockedHeader,
     }), { quality, size: "1088x1360", references: brandReferences.map(({ data, name, type }) => ({ data, name, type })) });

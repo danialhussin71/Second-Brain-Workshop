@@ -1,3 +1,4 @@
+import { stripHeaderDirectives } from "./brand-kit";
 import type { CarouselImageQuality } from "./carousel-settings";
 
 const GENERATE_ENDPOINT = "https://api.openai.com/v1/images/generations";
@@ -61,26 +62,39 @@ export function carouselSlidePrompt(args: {
 }): string {
   const role = args.index === 1 ? "cover" : args.index === args.total ? "closing" : "body";
   const locked = args.lockedHeader;
+  // Scrub here rather than at the call site: the header reservation only holds
+  // if NOTHING else in the prompt asks for a header, so no caller may opt out.
+  const styleBible = locked ? stripHeaderDirectives(args.styleBible || "") : (args.styleBible || "");
+  // Ordering follows OpenAI's image prompting guide: scene/layout → subject →
+  // details → constraints, in short labelled segments, with the hard exclusions
+  // restated last so recency reinforces them.
   return [
     `Create slide ${args.index} of ${args.total} for a premium 4:5 LinkedIn carousel about ${args.topic}.`,
     `This is a ${role} slide.`,
-    args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
-    args.referenceRoles?.length ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo. Use style references for palette, hierarchy, spacing, and recurring components; never copy their old slide copy.` : "",
     locked
-      ? "HEADER SPACE: the top 15% of the canvas is reserved for the founder's header, which is overlaid in post-production. Keep that strip completely empty of content — no text, no logos, no avatars, no badges, no name plates, no repost marks — and let the slide's background (its gradient, color field, or texture) continue smoothly and uninterrupted through it. Keep the strip low-detail and uncluttered so overlaid header elements stay legible. Never draw your own header, handle, or recurring avatar anywhere on the slide; all slide content starts below that strip."
+      ? "LAYOUT: this slide has exactly two zones. Zone 1 is the top 15% of the canvas: a calm, empty continuation of the slide's own background — the gradient, colour field or texture flows straight through it, edge to edge, at low detail. Zone 2 is the remaining bottom 85%: every headline, visual, object and page number lives here, fully inside that zone. Compose as if the top 15% were a quiet margin of pure background."
+      : "",
+    args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
+    args.referenceRoles?.length
+      ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo. Use style references for palette, typography, hierarchy and spacing only; never copy their slide copy${locked ? ", and ignore the identity/profile strip along the top of any style reference — that region is intentionally reproduced as plain background here" : ""}.`
       : "",
     `Render the following text exactly, with no paraphrasing or spelling changes. Headline: "${args.title}". Supporting copy: "${args.body}".`,
     `Art direction for this slide: ${args.art || "editorial visual metaphor with restrained detail"}.`,
-    `Locked visual system for the entire deck: ${args.styleBible || "dark editorial background, crisp modern typography, restrained cyan and violet accents, generous spacing"}.`,
+    `Locked visual system for the entire deck: ${styleBible || "dark editorial background, crisp modern typography, restrained cyan and violet accents, generous spacing"}.`,
     locked
-      ? "Maintain safe margins below the header strip, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
+      ? "Maintain safe margins below the top zone, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
       : "Maintain safe margins, strong typographic hierarchy, extremely legible text, consistent header/footer placement, and visual continuity with every other slide.",
     role === "cover" || role === "closing"
       ? "If a founder-face reference is attached, use that exact person as a polished photorealistic cutout or portrait. Do not alter identity, age, ethnicity, or facial structure."
       : locked
-        ? "Do not place the founder's face in the body of this slide unless the art direction explicitly calls for it — the overlaid header already carries the recurring avatar."
+        ? "Keep the founder's face out of this slide unless the art direction explicitly calls for it."
         : "Use the founder-face reference only for the small recurring avatar unless the visual direction explicitly requires the founder.",
     "If a brand-logo reference is attached, reproduce it accurately and do not redesign it.",
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",
+    // Restated last: the single most-violated constraint, in the plain
+    // prohibition form that measurably suppresses stray text/marks.
+    locked
+      ? "FINAL CHECK — the top 15% of the canvas: background only. No text, no words, no lettering, no name, no handle, no portrait, no avatar, no circular photo, no icon, no badge, no logo, no watermark, no bar, no banner, no panel, no divider line anywhere in that strip. It must look like an untouched extension of the background."
+      : "",
   ].filter(Boolean).join("\n\n");
 }

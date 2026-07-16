@@ -221,7 +221,54 @@ export async function hasBrandHeader(): Promise<boolean> {
   return Boolean(await blobGetBytes(BRAND_HEADER_PATH));
 }
 
-export function brandKitContext(kit: BrandKit): string {
+/** Sentences in a learned style spec that tell the model to DRAW the header. */
+const HEADER_DIRECTIVE = new RegExp(
+  [
+    "identity header", "recurring header", "retain the header", "the header",
+    "header (?:alignment|centerline|row|strip|bar|band|area|zone|block)",
+    "between header and headline",
+    "(?:creator|founder|profile) (?:portrait|photo|picture)",
+    "circular (?:creator|founder)?\\s*portrait",
+    "profile (?:name|row|strip|block)",
+    "repost mark", "repost (?:icon|label|button)",
+    "name plate", "descriptor (?:below|lines?)",
+    "recurring avatar", "avatar",
+  ].join("|"),
+  "i",
+);
+/** A block whose whole subject is the header (e.g. an "Identity header: …" paragraph). */
+const HEADER_BLOCK = /^\s*(?:identity|recurring|profile)?\s*header\b|^\s*identity\s+(?:block|bar|strip|row)\b|^\s*profile\s+(?:row|strip|block)\b/i;
+
+/**
+ * Remove header-drawing directives from a learned visual style spec.
+ *
+ * Style specs are reverse-engineered from the founder's own reference slides,
+ * which carry their header — so they invariably instruct the model to paint an
+ * avatar, name plate, and repost mark at the top. When the app overlays its own
+ * locked header, those directives directly contradict the "leave the top strip
+ * empty" rule, and they win: they arrive earlier, are marked authoritative, and
+ * are far more specific. Strip them so the prompt asks for one thing only.
+ */
+export function stripHeaderDirectives(spec: string): string {
+  return spec
+    .split(/\n\s*\n/)
+    .map((block) => {
+      if (HEADER_BLOCK.test(block)) return "";
+      // Mixed blocks (canvas/grid, recurring components, spacing) mention the
+      // header inside a wider rule — drop only the offending sentences.
+      const kept = block
+        .split(/(?<=\.)\s+/)
+        .filter((sentence) => !HEADER_DIRECTIVE.test(sentence))
+        .join(" ")
+        .trim();
+      return kept;
+    })
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
+}
+
+export function brandKitContext(kit: BrandKit, options: { suppressHeader?: boolean } = {}): string {
+  const styleSpec = options.suppressHeader ? stripHeaderDirectives(kit.styleSpec) : kit.styleSpec;
   const palette = kit.colors.filter((color) => color.hex).map((color) => `${color.name} ${color.hex}`).join(", ");
   const references = [
     kit.assets.face ? "founder face" : "",
@@ -231,7 +278,7 @@ export function brandKitContext(kit: BrandKit): string {
   // Only emit fields the founder has actually set, so an unconfigured kit stays
   // minimal and agents fall back to the second brain's Voice DNA instead of
   // empty labels.
-  const configured = kit.displayName || kit.voice || kit.styleSpec || kit.tagline;
+  const configured = kit.displayName || kit.voice || styleSpec || kit.tagline;
   return [
     `# Brand Kit: ${kit.displayName || "Not configured yet"}`,
     kit.handle ? `Handle: @${kit.handle}` : "",
@@ -243,7 +290,7 @@ export function brandKitContext(kit: BrandKit): string {
     kit.voice ? `Voice: ${kit.voice}` : "",
     kit.vocabulary ? `Preferred language: ${kit.vocabulary}` : "",
     kit.avoid ? `Avoid: ${kit.avoid}` : "",
-    kit.styleSpec ? `Locked visual system:\n${kit.styleSpec}` : "",
+    styleSpec ? `Locked visual system:\n${styleSpec}` : "",
     kit.notes ? `Additional notes: ${kit.notes}` : "",
     `Available visual references: ${references || "none uploaded"}.`,
     configured ? "" : "No brand voice or visual system has been configured yet. Draw voice and style from the founder's second brain (e.g. the Voice DNA note) and keep visuals clean and neutral until a brand kit is set.",

@@ -448,7 +448,11 @@ async function runCarousel(
       "Match the founder's documented voice. Never invent facts, quotes, client stories, or metrics. " +
       "For every slide, provide concrete visual direction that GPT Image 2 can execute. Choose split, stacked, or statement intentionally and vary layouts. " +
       "When a real product is central, include its exact official brand name in logos; otherwise use an empty array. " +
-      "styleBible must be a reusable visual system derived from the uploaded brand guidance: palette, typography character, spacing, recurring header/footer, image treatment, and consistency rules. " +
+      // No header/profile rules here: the app overlays its own locked identity
+      // header onto a reserved top strip, so anything the art director says
+      // about one only fights that reservation at render time.
+      "styleBible must be a reusable visual system derived from the uploaded brand guidance: palette, typography character, spacing, image treatment, and consistency rules. " +
+      "Never describe an identity header, profile row, avatar, name plate, repost mark, or anything else occupying the top of the slide — that strip is reserved and rendered separately. " +
       "grounding may contain only exact titles of supplied second-brain notes.\n\n" +
       (guide ? `AUTHORITATIVE CAROUSEL/CHEATSHEET PLAYBOOK — follow every applicable rule:\n${guide.body}` : ""),
     input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
