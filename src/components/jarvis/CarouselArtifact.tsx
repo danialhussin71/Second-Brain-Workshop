@@ -7,6 +7,7 @@ import { CaretLeft, CaretRight, Copy, Check, ImageBroken, ArrowsOut, ArrowsIn, D
 import { zipSync } from "fflate";
 import type { CarouselArtifactData } from "@/lib/jarvis-events";
 import { CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
+import { carouselHeader, composeSlideWithHeader, loadImageElement, type CarouselHeader } from "@/lib/carousel-header";
 import { cn } from "@/lib/utils";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
@@ -39,6 +40,27 @@ const carouselImageCache = new Map<string, string>();
 const carouselInFlight = new Set<string>();
 const slideCacheKey = (topic: string, idx: number, title: string, quality: CarouselImageQuality, brandRevision: number) => `${topic}::${idx}::${title}::${quality}::${brandRevision}`;
 
+// Locked header assets (spec + avatar), loaded once per brand revision and
+// shared by every slide so the stamped header is byte-identical across the deck.
+type HeaderAssets = { header: CarouselHeader; avatar: HTMLImageElement | null } | null;
+let headerAssetsPromise: Promise<HeaderAssets> | null = null;
+
+const loadHeaderAssets = (): Promise<HeaderAssets> => {
+  headerAssetsPromise ??= (async () => {
+    try {
+      const res = await fetch("/api/brand", { cache: "no-store" });
+      const json = (await res.json().catch(() => null)) as { kit?: Parameters<typeof carouselHeader>[0] } | null;
+      const header = json?.kit ? carouselHeader(json.kit) : null;
+      if (!header) return null;
+      const avatar = header.hasFace ? await loadImageElement("/api/brand/asset?kind=face").catch(() => null) : null;
+      return { header, avatar };
+    } catch {
+      return null;
+    }
+  })();
+  return headerAssetsPromise;
+};
+
 export default function CarouselArtifact({ data }: { data: CarouselArtifactData }) {
   const [[i, dir], setPos] = useState<[number, number]>([0, 0]);
   const [copied, setCopied] = useState(false);
@@ -59,6 +81,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
   useEffect(() => {
     const refreshBrand = () => {
       carouselImageCache.clear();
+      headerAssetsPromise = null;
       setGenImages({});
       setGenState({});
       setBrandRevision(Date.now());
@@ -112,8 +135,19 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
             });
             const j = (await res.json().catch(() => ({}))) as { image?: string };
             if (res.ok && j.image) {
-              carouselImageCache.set(key, j.image);
-              setGenImages((p) => ({ ...p, [idx]: j.image! }));
+              // stamp the locked brand header onto the reserved band, so it is
+              // pixel-identical on every slide (and in the ZIP/PDF downloads)
+              let image = j.image;
+              const assets = await loadHeaderAssets();
+              if (assets) {
+                try {
+                  image = await composeSlideWithHeader(image, assets.header, assets.avatar);
+                } catch {
+                  /* keep the raw slide if compositing fails */
+                }
+              }
+              carouselImageCache.set(key, image);
+              setGenImages((p) => ({ ...p, [idx]: image }));
               setGenState((p) => { const nx = { ...p }; delete nx[idx]; return nx; });
               return;
             }

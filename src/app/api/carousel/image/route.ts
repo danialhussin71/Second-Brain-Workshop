@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeCarouselQuality } from "@/lib/carousel-settings";
+import { carouselHeader } from "@/lib/carousel-header";
 import { carouselSlidePrompt, generateImage, imageModelConfigured } from "@/lib/openai-image";
 import { brandKitContext, getBrandKit, loadBrandReferenceImages } from "@/lib/brand-kit";
 
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
   try {
     const brand = await getBrandKit();
     const brandReferences = await loadBrandReferenceImages();
+    // When the kit carries an identity, reserve a flat band up top — the client
+    // stamps the deterministic header onto it so it is identical on every slide.
+    const header = carouselHeader(brand);
     const image = await generateImage(carouselSlidePrompt({
       index: slide.index + 1,
       total: payload.total || 1,
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
       topic: payload.topic || slide.title,
       brandContext: brandKitContext(brand),
       referenceRoles: brandReferences.map((reference, index) => `reference ${index + 1} = ${reference.role}`),
+      lockedHeaderHex: header?.bandHex ?? null,
     }), { quality, size: "1088x1360", references: brandReferences.map(({ data, name, type }) => ({ data, name, type })) });
     if (!image) return NextResponse.json({ error: "GPT Image 2 returned no image." }, { status: 502 });
     return NextResponse.json({ image, quality, model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2", references: brandReferences.length });
