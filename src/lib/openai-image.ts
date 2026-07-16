@@ -56,7 +56,7 @@ export function carouselSlidePrompt(args: {
   topic: string;
   brandContext?: string;
   referenceRoles?: string[];
-  /** True when a pre-rendered locked-header reference image is attached. */
+  /** True when the founder's header elements are overlaid on the top strip after render. */
   lockedHeader?: boolean;
 }): string {
   const role = args.index === 1 ? "cover" : args.index === args.total ? "closing" : "body";
@@ -67,18 +67,18 @@ export function carouselSlidePrompt(args: {
     args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
     args.referenceRoles?.length ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo. Use style references for palette, hierarchy, spacing, and recurring components; never copy their old slide copy.` : "",
     locked
-      ? "HEADER LOCK: the reference labelled locked-header is the founder's exact slide header. Copy it onto the very top of the slide pixel-for-pixel, at full canvas width, occupying exactly the top 15% of the canvas — a ditto copy on every slide of the deck. Identical layout, identical avatar at the identical size, identical text with the identical line breaks, identical font weights, identical colors, identical REPOST mark. Do not restyle, rescale, rewrap, paraphrase, recolor, or reinterpret any part of it, and never invent a different header. Everything else on the slide starts below the header and must not overlap it."
+      ? "HEADER SPACE: the top 15% of the canvas is reserved for the founder's header, which is overlaid in post-production. Keep that strip completely empty of content — no text, no logos, no avatars, no badges, no name plates, no repost marks — and let the slide's background (its gradient, color field, or texture) continue smoothly and uninterrupted through it. Keep the strip low-detail and uncluttered so overlaid header elements stay legible. Never draw your own header, handle, or recurring avatar anywhere on the slide; all slide content starts below that strip."
       : "",
     `Render the following text exactly, with no paraphrasing or spelling changes. Headline: "${args.title}". Supporting copy: "${args.body}".`,
     `Art direction for this slide: ${args.art || "editorial visual metaphor with restrained detail"}.`,
     `Locked visual system for the entire deck: ${args.styleBible || "dark editorial background, crisp modern typography, restrained cyan and violet accents, generous spacing"}.`,
     locked
-      ? "Maintain safe margins below the header, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
+      ? "Maintain safe margins below the header strip, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide."
       : "Maintain safe margins, strong typographic hierarchy, extremely legible text, consistent header/footer placement, and visual continuity with every other slide.",
     role === "cover" || role === "closing"
       ? "If a founder-face reference is attached, use that exact person as a polished photorealistic cutout or portrait. Do not alter identity, age, ethnicity, or facial structure."
       : locked
-        ? "Do not place the founder's face in the body of this slide unless the art direction explicitly calls for it — the locked header already carries the recurring avatar."
+        ? "Do not place the founder's face in the body of this slide unless the art direction explicitly calls for it — the overlaid header already carries the recurring avatar."
         : "Use the founder-face reference only for the small recurring avatar unless the visual direction explicitly requires the founder.",
     "If a brand-logo reference is attached, reproduce it accurately and do not redesign it.",
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",

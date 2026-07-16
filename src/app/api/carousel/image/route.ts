@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeCarouselQuality } from "@/lib/carousel-settings";
 import { carouselSlidePrompt, generateImage, imageModelConfigured } from "@/lib/openai-image";
-import { brandKitContext, getBrandKit, loadBrandReferenceImages } from "@/lib/brand-kit";
+import { brandKitContext, getBrandKit, hasBrandHeader, loadBrandReferenceImages } from "@/lib/brand-kit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -32,10 +32,11 @@ export async function POST(request: Request) {
   const slide = payload.slide;
   try {
     const brand = await getBrandKit();
-    // The pre-rendered locked header (built at brand-kit save time) rides along
-    // as a reference so the model reproduces it 1:1 at the top of every slide.
-    const brandReferences = await loadBrandReferenceImages({ includeHeader: true });
-    const lockedHeader = brandReferences.some((reference) => reference.role === "locked-header");
+    const brandReferences = await loadBrandReferenceImages();
+    // When a pre-rendered header exists, the prompt reserves a clean top strip
+    // (background flows through it) and the client overlays the header
+    // elements after generation.
+    const lockedHeader = await hasBrandHeader();
     const image = await generateImage(carouselSlidePrompt({
       index: slide.index + 1,
       total: payload.total || 1,

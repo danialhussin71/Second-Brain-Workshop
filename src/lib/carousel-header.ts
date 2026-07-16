@@ -1,9 +1,12 @@
 /**
  * Locked carousel header — rendered ONCE (client-side canvas) when the brand
- * kit is saved, stored on Blob, and sent to GPT Image as a `locked-header`
- * reference with every slide, with a prompt instruction to reproduce it
- * exactly. Because the header is rendered once, layout decisions (like whether
- * the tagline wraps to two lines) are made once and can never vary per slide.
+ * kit is saved and stored on Blob. It contains ONLY the three floating
+ * elements (avatar, name + tagline, REPOST mark) on a transparent strip — no
+ * band — so when it is composited over a generated slide the slide's own
+ * background flows through uninterrupted. The slide prompt reserves a clean,
+ * low-detail top strip for it. Because the header is rendered once, layout
+ * decisions (like whether the tagline wraps to two lines) are made once and
+ * can never vary per slide.
  *
  * `carouselHeader` is pure and safe to import server-side; everything that
  * touches canvas/Image is client-only.
@@ -132,10 +135,11 @@ function drawRepostIcon(ctx: CanvasRenderingContext2D, x: number, y: number, w: 
 }
 
 /**
- * Render the locked header strip in the founder's theme: a rounded-top band in
- * the brand background color, avatar + name + tagline (wrapped once, max two
- * lines) on the left, a REPOST mark on the right. Transparent above the band
- * and in the corners so the slide's own artwork shows through.
+ * Render the locked header strip: ONLY the three floating elements — avatar
+ * (or accent initial), name + tagline (wrapped once, max two lines), and the
+ * REPOST mark — on a fully transparent strip. No band, so the slide's own
+ * artwork continues uninterrupted behind them. A soft shadow keeps every
+ * element legible over whatever the model paints.
  */
 export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImageElement | null): Promise<Blob | null> {
   const canvas = document.createElement("canvas");
@@ -146,35 +150,37 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
 
   const onDark = luminance(header.bandHex) < 0.55;
   const text = onDark ? "#FFFFFF" : "#0B0C10";
-  const muted = onDark ? "rgba(255,255,255,0.66)" : "rgba(11,12,16,0.66)";
+  const muted = onDark ? "rgba(255,255,255,0.78)" : "rgba(11,12,16,0.78)";
   const family = (typeof document !== "undefined" && getComputedStyle(document.body).fontFamily) || "system-ui, sans-serif";
+  // soft halo under every element so it reads on the slide's own background
+  const shadow = () => {
+    ctx.shadowColor = onDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)";
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 2;
+  };
+  const noShadow = () => {
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+  };
 
-  // the band — rounded top corners, square bottom (it continues into the slide)
+  // same vertical rhythm the band version used, so proportions stay familiar
   const bandY = 16;
-  const r = 30;
-  ctx.beginPath();
-  ctx.moveTo(0, HEADER_H);
-  ctx.lineTo(0, bandY + r);
-  ctx.arcTo(0, bandY, r, bandY, r);
-  ctx.lineTo(HEADER_W - r, bandY);
-  ctx.arcTo(HEADER_W, bandY, HEADER_W, bandY + r, r);
-  ctx.lineTo(HEADER_W, HEADER_H);
-  ctx.closePath();
-  ctx.fillStyle = header.bandHex;
-  ctx.fill();
-  // hairline top sheen so the band edge reads crisply on any background
-  ctx.strokeStyle = onDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
   const padX = 56;
   const bandH = HEADER_H - bandY;
   let textX = padX;
 
-  // avatar (or accent initial) in a circle, vertically centered in the band
+  // avatar (or accent initial) in a circle, vertically centered in the strip
   if (avatar || header.name) {
     const d = 104;
     const ay = bandY + (bandH - d) / 2;
+    // shadowed disc first — the clipped image would clip its own shadow away
+    shadow();
+    ctx.beginPath();
+    ctx.arc(padX + d / 2, ay + d / 2, d / 2, 0, Math.PI * 2);
+    ctx.fillStyle = header.accentHex;
+    ctx.fill();
+    noShadow();
     ctx.save();
     ctx.beginPath();
     ctx.arc(padX + d / 2, ay + d / 2, d / 2, 0, Math.PI * 2);
@@ -186,8 +192,6 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
       const scale = Math.max(d / iw, d / ih);
       ctx.drawImage(avatar, padX + (d - iw * scale) / 2, ay + (d - ih * scale) / 2, iw * scale, ih * scale);
     } else {
-      ctx.fillStyle = header.accentHex;
-      ctx.fillRect(padX, ay, d, d);
       ctx.fillStyle = "#FFFFFF";
       ctx.font = `600 46px ${family}`;
       ctx.textAlign = "center";
@@ -197,13 +201,14 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
     ctx.restore();
     ctx.beginPath();
     ctx.arc(padX + d / 2, ay + d / 2, d / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = rgba(header.accentHex, 0.55);
-    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = rgba(header.accentHex, 0.85);
+    ctx.lineWidth = 3;
     ctx.stroke();
     textX = padX + d + 28;
   }
 
   // REPOST mark on the right
+  shadow();
   ctx.textBaseline = "alphabetic";
   ctx.textAlign = "right";
   ctx.font = `700 30px ${family}`;
@@ -218,6 +223,7 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
   drawRepostIcon(ctx, repostLeft, bandY + bandH / 2 - iconH / 2, iconW, iconH, text);
 
   // name + tagline, wrapped ONCE — this render decides the line breaks forever
+  shadow();
   ctx.textAlign = "left";
   const maxTextW = repostLeft - 36 - textX;
   ctx.font = `400 23px ${family}`;
@@ -239,6 +245,26 @@ export async function renderBrandHeader(header: CarouselHeader, avatar: HTMLImag
     ctx.fillText(line, textX, cursorY + 23);
     cursorY += 32;
   }
+  noShadow();
 
   return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png"));
+}
+
+/**
+ * Composite the stored header elements over a generated slide. The header PNG
+ * is transparent everywhere except the three elements, so the slide's own
+ * background flows through untouched.
+ */
+export async function composeSlideWithHeader(slideDataUrl: string, headerImage: HTMLImageElement): Promise<string> {
+  const slide = await loadImageElement(slideDataUrl);
+  const W = slide.naturalWidth || HEADER_W;
+  const H = slide.naturalHeight || 1360;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return slideDataUrl;
+  ctx.drawImage(slide, 0, 0, W, H);
+  ctx.drawImage(headerImage, 0, 0, W, (W * HEADER_H) / HEADER_W);
+  return canvas.toDataURL("image/png");
 }

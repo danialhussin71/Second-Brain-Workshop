@@ -46,7 +46,7 @@ export type BrandReferenceImage = {
   data: Uint8Array;
   name: string;
   type: string;
-  role: "founder-face" | "brand-logo" | "style-reference" | "locked-header";
+  role: "founder-face" | "brand-logo" | "style-reference";
 };
 
 /**
@@ -200,7 +200,7 @@ export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
   return bytes ? { ...bytes, asset } : null;
 }
 
-export async function loadBrandReferenceImages(options: { includeHeader?: boolean } = {}): Promise<BrandReferenceImage[]> {
+export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]> {
   const kit = await getBrandKit();
   const entries: Array<{ asset: BrandAsset | null; role: BrandReferenceImage["role"] }> = [
     { asset: kit.assets.face, role: "founder-face" },
@@ -212,14 +212,13 @@ export async function loadBrandReferenceImages(options: { includeHeader?: boolea
     const bytes = await blobGetBytes(asset.path);
     return bytes ? { data: bytes.data, name: asset.name, type: bytes.contentType || asset.contentType, role } : null;
   }));
-  const images = results.filter((item): item is BrandReferenceImage => !!item);
-  if (options.includeHeader) {
-    const header = await blobGetBytes(BRAND_HEADER_PATH);
-    // first in the list — it is the most authoritative reference and must never
-    // fall off the reference cap
-    if (header) images.unshift({ data: header.data, name: "locked-header.png", type: header.contentType || "image/png", role: "locked-header" });
-  }
-  return images;
+  return results.filter((item): item is BrandReferenceImage => !!item);
+}
+
+/** Whether a pre-rendered locked carousel header exists on Blob. */
+export async function hasBrandHeader(): Promise<boolean> {
+  if (!blobConfigured()) return false;
+  return Boolean(await blobGetBytes(BRAND_HEADER_PATH));
 }
 
 export function brandKitContext(kit: BrandKit): string {

@@ -7,6 +7,7 @@ import { CaretLeft, CaretRight, Copy, Check, ImageBroken, ArrowsOut, ArrowsIn, D
 import { zipSync } from "fflate";
 import type { CarouselArtifactData } from "@/lib/jarvis-events";
 import { CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
+import { composeSlideWithHeader, loadImageElement } from "@/lib/carousel-header";
 import { cn } from "@/lib/utils";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
@@ -39,6 +40,17 @@ const carouselImageCache = new Map<string, string>();
 const carouselInFlight = new Set<string>();
 const slideCacheKey = (topic: string, idx: number, title: string, quality: CarouselImageQuality, brandRevision: number) => `${topic}::${idx}::${title}::${quality}::${brandRevision}`;
 
+// The stored header elements (transparent PNG, rendered at brand-kit save
+// time). Overlaid on every slide's reserved top strip, so the identity mark is
+// identical across the deck while the slide's own background shows through.
+// Loaded once and shared; null when the brand kit has no identity yet.
+let headerImagePromise: Promise<HTMLImageElement | null> | null = null;
+
+const loadHeaderImage = (): Promise<HTMLImageElement | null> => {
+  headerImagePromise ??= loadImageElement(`/api/brand/header?v=${Date.now()}`).catch(() => null);
+  return headerImagePromise;
+};
+
 export default function CarouselArtifact({ data }: { data: CarouselArtifactData }) {
   const [[i, dir], setPos] = useState<[number, number]>([0, 0]);
   const [copied, setCopied] = useState(false);
@@ -59,6 +71,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
   useEffect(() => {
     const refreshBrand = () => {
       carouselImageCache.clear();
+      headerImagePromise = null;
       setGenImages({});
       setGenState({});
       setBrandRevision(Date.now());
@@ -112,8 +125,19 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
             });
             const j = (await res.json().catch(() => ({}))) as { image?: string };
             if (res.ok && j.image) {
-              carouselImageCache.set(key, j.image);
-              setGenImages((p) => ({ ...p, [idx]: j.image! }));
+              // overlay the founder's header elements on the reserved top strip —
+              // transparent between elements, so the slide's background flows through
+              let image = j.image;
+              const headerImage = await loadHeaderImage();
+              if (headerImage) {
+                try {
+                  image = await composeSlideWithHeader(image, headerImage);
+                } catch {
+                  /* keep the raw slide if the overlay fails */
+                }
+              }
+              carouselImageCache.set(key, image);
+              setGenImages((p) => ({ ...p, [idx]: image }));
               setGenState((p) => { const nx = { ...p }; delete nx[idx]; return nx; });
               return;
             }
