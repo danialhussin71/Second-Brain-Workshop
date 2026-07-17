@@ -1,3 +1,10 @@
+/**
+ * Folder that hand-written Settings → Documents notes live under. Lives here so
+ * the client and the storage layer agree on it without the client importing the
+ * Blob-backed knowledge module.
+ */
+export const DOCUMENTS_FOLDER = "Documents";
+
 /** Shared shape consumed by the Synaptic Bloom graph renderer. */
 export type GraphNode = {
   id: string;

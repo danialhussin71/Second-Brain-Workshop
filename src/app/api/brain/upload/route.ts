@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { unzipBuffer } from "@/lib/unzip";
 import {
-  saveOwnerNotes,
+  replaceOwnerNotesKeeping,
+  upsertOwnerNotes,
   blobConfigured,
 } from "@/lib/owner-knowledge";
+import { DOCUMENTS_FOLDER } from "@/lib/vault";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -82,12 +84,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const result = await saveOwnerNotes(notes.map((n) => ({ filename: n.path, raw: `---\ntitle: ${JSON.stringify(n.title)}\n---\n\n${n.body}\n` })));
+    // A folder-scoped upload (Settings → Documents) adds to the brain; an
+    // unscoped one is a vault import and replaces it, minus hand-written notes.
+    const uploads = notes.map((n) => ({ filename: n.path, raw: `---\ntitle: ${JSON.stringify(n.title)}\n---\n\n${n.body}\n` }));
+    const result = folderPrefix
+      ? await upsertOwnerNotes(uploads)
+      : await replaceOwnerNotesKeeping(uploads, [DOCUMENTS_FOLDER]);
     return NextResponse.json({
       ok: true,
       mode: "blob",
       uploaded: notes.length,
-      replaced: true,
+      replaced: !folderPrefix,
       documents: result.documents,
       path: result.path,
     });

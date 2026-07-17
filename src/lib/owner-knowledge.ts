@@ -5,7 +5,6 @@
  *
  * Uploads are not kept as separate files. Each note becomes a named section.
  */
-import path from "node:path";
 import matter from "gray-matter";
 import { blobConfigured, blobGetText, blobPutText } from "./blob-store";
 
@@ -29,6 +28,15 @@ export function ownerUploadBackend(): OwnerBackend {
   return blobConfigured() ? "blob" : "none";
 }
 
+/**
+ * The one path normalisation every write goes through. Merges compare incoming
+ * filenames against stored paths, so both sides must normalise identically or a
+ * re-upload of the same note lands as a duplicate section.
+ */
+export function normalizeNotePath(filename: string): string {
+  return filename.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\.markdown$/i, ".md");
+}
+
 /** Build the single brain document from uploaded notes. */
 export function buildBrainMarkdown(
   notes: Array<{ filename: string; title?: string; body: string }>
@@ -40,7 +48,7 @@ export function buildBrainMarkdown(
     "",
   ];
   for (const n of notes) {
-    const name = n.filename.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\.markdown$/i, ".md");
+    const name = normalizeNotePath(n.filename);
     const title = (n.title || name.replace(/\.md$/i, "")).trim();
     const body = stripFrontmatter(n.body).trim();
     parts.push(`<!-- section: ${name} -->`);
@@ -131,7 +139,7 @@ export async function saveOwnerNotes(
 
   const sections = notes.map((n) => {
     const { data, content } = matter(n.raw);
-    const filename = n.filename.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\.markdown$/i, ".md");
+    const filename = normalizeNotePath(n.filename);
     const title =
       (typeof data.title === "string" && data.title) || filename.replace(/\.md$/i, "");
     return { filename, title, body: content.trim() };
@@ -147,12 +155,35 @@ export async function saveOwnerNotes(
   };
 }
 
-/** Add or replace named notes while preserving every existing virtual vault path. */
-export async function upsertOwnerNotes(notes: Array<{ filename: string; raw: string }>) {
+/** Round-trip a parsed note back into the upload shape saveOwnerNotes expects. */
+function toUpload(note: OwnerNote) {
+  return { filename: note.path, raw: `---\ntitle: ${JSON.stringify(note.title)}\n---\n\n${note.body}\n` };
+}
+
+/** Rewrite BRAIN.md from `notes`, carrying over each existing note `retain` approves. */
+async function mergeOwnerNotes(
+  notes: Array<{ filename: string; raw: string }>,
+  retain: (note: OwnerNote) => boolean
+) {
   const existing = await listOwnerNotes();
-  const incoming = new Map(notes.map((note) => [note.filename.replace(/\\/g, "/").replace(/^\/+/, ""), note]));
-  const retained = existing
-    .filter((note) => !incoming.has(note.path))
-    .map((note) => ({ filename: note.path, raw: `---\ntitle: ${JSON.stringify(note.title)}\n---\n\n${note.body}\n` }));
+  const incoming = new Set(notes.map((note) => normalizeNotePath(note.filename)));
+  const retained = existing.filter((note) => !incoming.has(note.path) && retain(note)).map(toUpload);
   return saveOwnerNotes([...retained, ...notes]);
+}
+
+/** Add or replace named notes while preserving every existing virtual vault path. */
+export function upsertOwnerNotes(notes: Array<{ filename: string; raw: string }>) {
+  return mergeOwnerNotes(notes, () => true);
+}
+
+/**
+ * Replace the vault wholesale — a re-upload should drop notes deleted since the
+ * last one — but keep hand-written notes under `folders`, which no vault export
+ * contains and which a blind replace would silently destroy.
+ */
+export function replaceOwnerNotesKeeping(
+  notes: Array<{ filename: string; raw: string }>,
+  folders: string[]
+) {
+  return mergeOwnerNotes(notes, (note) => folders.some((folder) => note.path.startsWith(`${folder}/`)));
 }
