@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { unzipBuffer } from "@/lib/unzip";
+import { TEXT_FILE, unzipBuffer } from "@/lib/unzip";
 import {
   replaceOwnerNotesKeeping,
   upsertOwnerNotes,
@@ -10,15 +10,6 @@ import { DOCUMENTS_FOLDER } from "@/lib/vault";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-
-// Text formats we ingest as knowledge notes. Kept broad on purpose: an
-// exported vault often mixes markdown with plain notes and CSV context files.
-const TEXT_FILE = /\.(md|markdown|mdx|txt|text|csv)$/i;
-
-/** Skip macOS resource forks, dotfiles, and dot-folders like .obsidian. */
-function isJunk(entryPath: string): boolean {
-  return entryPath.includes("__MACOSX") || entryPath.split("/").some((seg) => seg.startsWith("."));
-}
 
 /**
  * Vault zips are usually wrapped in one root folder ("Malik Brain/..."). Strip a
@@ -64,9 +55,9 @@ export async function POST(req: Request) {
 
       if (lower.endsWith(".zip")) {
         const entries = await unzipBuffer(buf);
-        const usable = entries.filter((e) => TEXT_FILE.test(e.path) && !isJunk(e.path));
-        const rootless = stripCommonRoot(usable.map((e) => e.path));
-        for (const e of usable) {
+        // unzipBuffer only extracts note files; images, PDFs, etc. are discarded.
+        const rootless = stripCommonRoot(entries.map((e) => e.path));
+        for (const e of entries) {
           const clean = rootless(e.path);
           const rel = folderPrefix ? `${folderPrefix}/${clean}` : clean;
           notes.push(parseNote(rel, e.data.toString("utf8")));

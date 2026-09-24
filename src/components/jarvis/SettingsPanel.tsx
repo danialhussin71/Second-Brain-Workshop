@@ -6,6 +6,7 @@ import { Brain, Cards, FileText, GearSix, NotePencil, Palette, UploadSimple, X }
 import BrainGraph from "@/components/BrainGraph";
 import BrandStudio from "./BrandStudio";
 import { DOCUMENTS_FOLDER, type BrainGraph as Graph } from "@/lib/vault";
+import { slimVaultZip } from "@/lib/unzip";
 import { notifyBrainUpdated } from "@/lib/brain-events";
 import { CAROUSEL_QUALITIES, CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
 
@@ -26,11 +27,23 @@ export default function SettingsPanel({ open, onClose }: { open: boolean; onClos
   async function upload(files: FileList | null, folder?: string) {
     if (!files?.length) return;
     setNotice(folder ? "Adding documents…" : "Uploading vault…");
-    const form = new FormData(); Array.from(files).forEach((file) => form.append("files", file));
+    const form = new FormData(); let dropped = 0;
+    // Strip every non-note file out of a zip before it leaves the browser, so
+    // attachments can't push the upload past the request size limit.
+    for (const file of Array.from(files)) {
+      if (!file.name.toLowerCase().endsWith(".zip")) { form.append("files", file); continue; }
+      try {
+        const slim = slimVaultZip(new Uint8Array(await file.arrayBuffer()));
+        dropped += slim.dropped;
+        if (slim.kept) form.append("files", new File([slim.zip.slice()], file.name, { type: "application/zip" }));
+      } catch { return setNotice(`Couldn't read ${file.name}. Re-export the zip and try again.`); }
+    }
+    if (!form.has("files")) return setNotice("No .md, .txt, or .csv notes found in that upload.");
     if (folder) form.append("folder", folder);
-    const response = await fetch("/api/brain/upload", { method: "POST", body: form }); const data = await response.json();
+    const response = await fetch("/api/brain/upload", { method: "POST", body: form }); const data = await response.json().catch(() => ({ error: response.status === 413 ? "Upload is too large. Split it into smaller zips." : "Upload failed." }));
     if (!response.ok) return setNotice(data.error || "Upload failed.");
-    setNotice(folder ? `${data.uploaded} document${data.uploaded === 1 ? "" : "s"} added to your brain as ${data.uploaded === 1 ? "a node" : "nodes"}.` : `${data.documents} notes imported. Paths and wiki links preserved.`);
+    const skipped = dropped ? ` Skipped ${dropped} non-note file${dropped === 1 ? "" : "s"}.` : "";
+    setNotice((folder ? `${data.uploaded} document${data.uploaded === 1 ? "" : "s"} added to your brain as ${data.uploaded === 1 ? "a node" : "nodes"}.` : `${data.documents} notes imported. Paths and wiki links preserved.`) + skipped);
     await refresh();
   }
   return <AnimatePresence>{open && <>

@@ -75,6 +75,20 @@ right specialists:
 
 The live run streams into the UI so you can watch each agent contribute.
 
+#### Slash commands
+
+Type `/` in the command bar to skip routing and go straight to a format.
+Add a topic after the command, or leave it empty and Jarvis picks one from your brain.
+
+| Command | Aliases | Produces |
+| --- | --- | --- |
+| `/carousel` | `/deck`, `/slides` | Carousel deck (e.g. `/carousel 7 slides on pricing`) |
+| `/image` | `/picture`, `/img` | Single-image post |
+| `/text` | `/post` | Text post |
+| `/reel` | `/reels`, `/short` | Short-form reel script (e.g. `/reel 30 seconds on …`) |
+| `/video` | `/script`, `/longform`, `/youtube` | Long-form video script (e.g. `/video 12 minutes on …`) |
+| `/newsletter` | `/email` | HTML email newsletter |
+
 ### 4. Brand Studio (Settings → Brand Kit)
 
 A complete, Blob-backed identity system. Upload a founder portrait, a logo, and

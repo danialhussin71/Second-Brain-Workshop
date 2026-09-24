@@ -19,6 +19,7 @@ import { buildNewsletterHtml, newsletterAccent, newsletterImagePrompt, type News
 import { generateImage, imageModelConfigured } from "@/lib/openai-image";
 import { STYLE_PRESETS } from "@/lib/post-image";
 import { isRecallQuery, isSessionNote, recordSession } from "@/lib/session-memory";
+import { parseSlashCommand, slashInstruction, type ParsedSlash } from "@/lib/slash-commands";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -369,6 +370,15 @@ function cleanPlan(plan: PlannerResult, instruction: string): TeamPlan {
     };
   }
   return keywordRoute(instruction);
+}
+
+/** A slash command is an explicit format choice: skip the planner entirely. */
+function slashPlan({ command, topic }: ParsedSlash): TeamPlan {
+  return {
+    assignments: [{ department: "cmo", plan: [command.format] }],
+    shared: ["research"],
+    rationale: `/${command.name}: Research sharpens the angle, then Content produces the ${command.label.toLowerCase()}${topic ? "" : " on a topic picked from your second brain"}.`,
+  };
 }
 
 async function planWithCeo(instruction: string, signal: AbortSignal): Promise<TeamPlan> {
@@ -887,8 +897,10 @@ async function synthesize(
 
 export async function POST(request: Request) {
   const { instruction } = (await request.json().catch(() => ({}))) as { instruction?: string };
-  const text = instruction?.trim();
-  if (!text) return new Response("Instruction required", { status: 400 });
+  const raw = instruction?.trim();
+  if (!raw) return new Response("Instruction required", { status: 400 });
+  const slash = parseSlashCommand(raw);
+  const text = slash ? slashInstruction(slash) : raw;
   const runId = `run_${now().toString(36)}`;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -898,7 +910,7 @@ export async function POST(request: Request) {
         emit({ type: "run.start", runId, instruction: text, at: now() });
         emit({ type: "agent.activate", node: "kronos", label: "CEO is reading the intent", at: now() });
         emit({ type: "agent.status", node: "kronos", status: "Choosing the smallest capable team", at: now() });
-        const plan = await planWithCeo(text, request.signal);
+        const plan = slash ? slashPlan(slash) : await planWithCeo(text, request.signal);
         emit({ type: "route", rationale: plan.rationale, assignments: plan.assignments, shared: plan.shared, at: now() });
         await beat();
 
