@@ -83,6 +83,14 @@ const PHOTOREALISM =
 const NEGATIVE_GUARDRAILS =
   "Avoid: uncanny valley faces, waxy or plastic skin, over-smoothed beauty-filter skin, AI gloss or HDR halos, distorted anatomy or hands, extra fingers, cut-out paste-job compositing, floating subjects with mismatched shadows, unwanted baked-in text/letters/logos/watermarks, borders or UI chrome, generic stock-photo smiles, cartoon or illustration style unless requested, duplicated or melted facial features.";
 
+/**
+ * Founders' style references are usually their own LinkedIn posts, which carry
+ * a profile strip along the top (avatar, name, handle, repost mark). The model
+ * copies it unless told plainly that it is not part of the look.
+ */
+const NO_HEADER_STRIP =
+  "NO HEADER STRIP: this image has no identity header, profile row, or top strip of any kind. No small avatar or circular profile photo, no name, no handle, no tagline, no repost mark or icon, no bar, band or banner across the top. If a style reference shows such a strip, it is NOT part of the look — do not copy it, recreate it, or leave space for it. The image begins directly with its own scene.";
+
 const IDENTITY_LOCK =
   "The person shown in the supplied founder-face reference is the subject. Preserve their exact facial identity: bone structure, eye shape, nose, mouth, skin tone, hair, and build. No beautification, no age or ethnicity change, no averaging toward a generic face. Integrate them with physically matching lighting, shadow falloff, perspective, and color temperature so they are never a floating cut-out. This must clearly be the same real person.";
 
@@ -115,11 +123,14 @@ export function buildPostImagePrompt(args: {
   }
   if (args.referenceRoles?.length) {
     parts.push(
-      `Reference image legend, in upload order: ${args.referenceRoles.join("; ")}. Reproduce any real logo accurately.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, treatment and finish — the look. Take NOTHING it says or is about: its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear here in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone.`,
+      `Reference image legend, in upload order: ${args.referenceRoles.join("; ")}. Reproduce any real logo accurately.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, treatment and finish — the look. Take NOTHING it says or is about: its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear here in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone. Ignore any profile/identity strip along the top of a style reference entirely — never reproduce it.`,
     );
   }
+  parts.push(NO_HEADER_STRIP);
 
   parts.push(PHOTOREALISM);
   parts.push(NEGATIVE_GUARDRAILS);
+  // Restated last so recency reinforces it against the references.
+  parts.push("FINAL CHECK — there is NO header strip at the top of this image: no profile row, no avatar, no circular photo, no name, no handle, no repost mark, no top bar or banner. Even if every style reference has one, this image does not.");
   return parts.join("\n\n");
 }

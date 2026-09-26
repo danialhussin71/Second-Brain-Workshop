@@ -540,11 +540,10 @@ async function runCarousel(
       "Match the founder's documented voice. Never invent facts, quotes, client stories, or metrics. " +
       "For every slide, provide concrete visual direction that GPT Image 2 can execute. Choose split, stacked, or statement intentionally and vary layouts. " +
       "When a real product is central, include its exact official brand name in logos; otherwise use an empty array. " +
-      // No header/profile rules here: the app overlays its own locked identity
-      // header onto a reserved top strip, so anything the art director says
-      // about one only fights that reservation at render time.
+      // The identity/profile header strip is banned on every slide; anything
+      // the art director says about one would fight that ban at render time.
       "styleBible must be a reusable visual system derived from the uploaded brand guidance: palette, typography character, spacing, image treatment, and consistency rules. " +
-      "Never describe an identity header, profile row, avatar, name plate, repost mark, or anything else occupying the top of the slide — that strip is reserved and rendered separately. " +
+      "Slides have NO header strip. Never describe an identity header, profile row, avatar, name plate, handle, tagline, repost mark, or any bar or band across the top of a slide — do not add one, even if the brand references show one. " +
       "grounding may contain only exact titles of supplied second-brain notes.\n\n" +
       (guide ? `AUTHORITATIVE CAROUSEL/CHEATSHEET PLAYBOOK — follow every applicable rule:\n${guide.body}` : ""),
     input: `Founder instruction:\n${instruction}\n\nRESEARCH HANDOFF:\n${research?.output || "No separate research run."}\n\nSECOND BRAIN, VOICE, AND BRAND CONTEXT:\n${knowledgeText(notes)}`,
@@ -818,6 +817,7 @@ async function runPicturePost(
       `Choose the best style preset for the message from: ${styleList}. Choose aspect square, portrait, or landscape to fit the platform. ` +
       "concept is one vivid sentence describing the visual. image_prompt is a complete, self-contained prompt for a photorealistic image model: describe subject, setting, lighting, mood, and composition. Do not ask it to leave space for overlays. " +
       "The founder's real portrait, logo, and brand references from the brand kit are supplied to the image model automatically, so when a person is central, write the subject as the real founder and rely on the identity lock. " +
+      "Never include an identity header, profile row, avatar, name plate, handle, repost mark, or any strip or bar across the top of the image — even if the brand references show one. " +
       "on_image_text is a short two-to-six word phrase to render on the image, or an empty string for a clean photo. " +
       "caption is the posting caption in the founder's voice, ending with cta. Match the founder's Voice DNA. No emojis unless their voice clearly uses them. " +
       "Only include hashtags if the founder explicitly asks for them or their voice guide uses them; otherwise return an empty hashtags array. When present, hashtags omit the leading #. " +

@@ -52,7 +52,7 @@ export function carouselHeader(kit: BrandKit): CarouselHeader | null {
   const handle = kit.handle.trim();
   const hasFace = Boolean(kit.assets.face);
   if (!name && !tagline && !handle && !hasFace) return null;
-  const byName = (re: RegExp) => kit.colors.find((c) => re.test(c.name) && /^#[0-9A-F]{6}$/i.test(c.hex))?.hex;
+  const byName = (re: RegExp) => kit.colors.find((c) => re.test(`${c.role || ""} ${c.name}`) && /^#[0-9A-F]{6}$/i.test(c.hex))?.hex;
   return {
     name,
     tagline,

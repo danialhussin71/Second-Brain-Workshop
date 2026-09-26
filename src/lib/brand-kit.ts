@@ -4,16 +4,22 @@ export const BRAND_KIT_PATH = "owner/brand/kit.json";
 const BRAND_ASSET_PREFIX = "owner/brand/assets";
 /** The pre-rendered locked carousel header (rendered client-side at kit save). */
 export const BRAND_HEADER_PATH = "owner/brand/assets/locked-header.png";
+/** The founder's uploaded visual identity document, kept verbatim for re-extraction. */
+export const BRAND_IDENTITY_PATH = "owner/brand/assets/identity.md";
 
 export type BrandColor = {
   id: string;
   name: string;
   hex: string;
+  /** Primary / Secondary / Accent / Dark / Light, as the identity doc assigns it. */
+  role?: string;
+  /** Share and where it is used, e.g. "55%: banners, covers, slide backgrounds". */
+  usage?: string;
 };
 
 export type BrandAsset = {
   id: string;
-  kind: "face" | "logo" | "reference";
+  kind: "face" | "logo" | "reference" | "identity";
   path: string;
   name: string;
   contentType: string;
@@ -29,6 +35,13 @@ export type BrandKit = {
   colors: BrandColor[];
   headlineFont: string;
   bodyFont: string;
+  typeHierarchy: string;
+  positioning: string;
+  audience: string;
+  personality: string;
+  imagery: string;
+  dos: string;
+  donts: string;
   voice: string;
   vocabulary: string;
   avoid: string;
@@ -37,6 +50,7 @@ export type BrandKit = {
   assets: {
     face: BrandAsset | null;
     logo: BrandAsset | null;
+    identity: BrandAsset | null;
     references: BrandAsset[];
   };
   updatedAt: string;
@@ -70,12 +84,19 @@ export const DEFAULT_BRAND_KIT: BrandKit = {
   ],
   headlineFont: "",
   bodyFont: "",
+  typeHierarchy: "",
+  positioning: "",
+  audience: "",
+  personality: "",
+  imagery: "",
+  dos: "",
+  donts: "",
   voice: "",
   vocabulary: "",
   avoid: "",
   styleSpec: "",
   notes: "",
-  assets: { face: null, logo: null, references: [] },
+  assets: { face: null, logo: null, identity: null, references: [] },
   updatedAt: "",
 };
 
@@ -104,12 +125,14 @@ function normalizeAsset(value: unknown, kind: BrandAsset["kind"]): BrandAsset | 
 export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_BRAND_KIT): BrandKit {
   const raw = value && typeof value === "object" ? value as Partial<BrandKit> : {};
   const incomingColors = Array.isArray(raw.colors) ? raw.colors : previous.colors;
-  const colors = incomingColors.slice(0, 8).map((color, index) => {
+  const colors = incomingColors.slice(0, 8).map((color, index): BrandColor => {
     const fallback = previous.colors[index] || DEFAULT_BRAND_KIT.colors[index % DEFAULT_BRAND_KIT.colors.length];
     return {
       id: cleanText(color?.id, fallback.id, 40) || fallback.id,
       name: cleanText(color?.name, fallback.name, 80) || fallback.name,
       hex: cleanHex(color?.hex, fallback.hex),
+      role: cleanText(color?.role, "", 40),
+      usage: cleanText(color?.usage, "", 400),
     };
   });
   while (colors.length < 5) colors.push({ ...DEFAULT_BRAND_KIT.colors[colors.length] });
@@ -126,6 +149,13 @@ export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_B
     colors,
     headlineFont: cleanText(raw.headlineFont, previous.headlineFont, 300),
     bodyFont: cleanText(raw.bodyFont, previous.bodyFont, 300),
+    typeHierarchy: cleanText(raw.typeHierarchy, previous.typeHierarchy, 4_000),
+    positioning: cleanText(raw.positioning, previous.positioning, 4_000),
+    audience: cleanText(raw.audience, previous.audience, 4_000),
+    personality: cleanText(raw.personality, previous.personality, 4_000),
+    imagery: cleanText(raw.imagery, previous.imagery, 8_000),
+    dos: cleanText(raw.dos, previous.dos, 8_000),
+    donts: cleanText(raw.donts, previous.donts, 8_000),
     voice: cleanText(raw.voice, previous.voice, 8_000),
     vocabulary: cleanText(raw.vocabulary, previous.vocabulary, 8_000),
     avoid: cleanText(raw.avoid, previous.avoid, 8_000),
@@ -134,6 +164,7 @@ export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_B
     assets: {
       face: normalizeAsset(assets.face, "face"),
       logo: normalizeAsset(assets.logo, "logo"),
+      identity: normalizeAsset(assets.identity, "identity"),
       references,
     },
     updatedAt: cleanText(raw.updatedAt, previous.updatedAt, 80),
@@ -192,9 +223,26 @@ export async function removeBrandAsset(kind: BrandAsset["kind"], id?: string): P
   return saveBrandKit(current);
 }
 
+/** Store the visual identity document verbatim and record it on the kit. */
+export async function saveBrandIdentityDoc(name: string, markdown: string): Promise<BrandKit> {
+  if (!blobConfigured()) throw new Error("Connect Vercel Blob before uploading a visual identity.");
+  await blobPutText(BRAND_IDENTITY_PATH, markdown, "text/markdown; charset=utf-8");
+  const current = await getBrandKit();
+  current.assets.identity = {
+    id: "identity", kind: "identity", path: BRAND_IDENTITY_PATH, name: name || "brand-identity.md",
+    contentType: "text/markdown", updatedAt: new Date().toISOString(),
+  };
+  return saveBrandKit(current);
+}
+
+export async function readBrandIdentityDoc(): Promise<string | null> {
+  if (!blobConfigured()) return null;
+  return blobGetText(BRAND_IDENTITY_PATH);
+}
+
 export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
   const kit = await getBrandKit();
-  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kit.assets.references.find((item) => item.id === id) || null;
+  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kind === "identity" ? kit.assets.identity : kit.assets.references.find((item) => item.id === id) || null;
   if (!asset) return null;
   const bytes = await blobGetBytes(asset.path);
   return bytes ? { ...bytes, asset } : null;
@@ -213,12 +261,6 @@ export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]>
     return bytes ? { data: bytes.data, name: asset.name, type: bytes.contentType || asset.contentType, role } : null;
   }));
   return results.filter((item): item is BrandReferenceImage => !!item);
-}
-
-/** Whether a pre-rendered locked carousel header exists on Blob. */
-export async function hasBrandHeader(): Promise<boolean> {
-  if (!blobConfigured()) return false;
-  return Boolean(await blobGetBytes(BRAND_HEADER_PATH));
 }
 
 /** Sentences in a learned style spec that tell the model to DRAW the header. */
@@ -244,10 +286,10 @@ const HEADER_BLOCK = /^\s*(?:identity|recurring|profile)?\s*header\b|^\s*identit
  *
  * Style specs are reverse-engineered from the founder's own reference slides,
  * which carry their header — so they invariably instruct the model to paint an
- * avatar, name plate, and repost mark at the top. When the app overlays its own
- * locked header, those directives directly contradict the "leave the top strip
- * empty" rule, and they win: they arrive earlier, are marked authoritative, and
- * are far more specific. Strip them so the prompt asks for one thing only.
+ * avatar, name plate, and repost mark at the top. That strip is banned from
+ * every generated image, and these directives would win against the ban: they
+ * arrive earlier, are marked authoritative, and are far more specific. Strip
+ * them so the prompt asks for one thing only.
  */
 export function stripHeaderDirectives(spec: string): string {
   return spec
@@ -324,12 +366,15 @@ export function stripBorrowedContent(spec: string): string {
     .join("\n\n");
 }
 
-export function brandKitContext(kit: BrandKit, options: { suppressHeader?: boolean } = {}): string {
-  // Borrowed content is never wanted, in any format, so it is scrubbed
-  // unconditionally — unlike the header, which only yields to the overlay.
-  const learned = stripBorrowedContent(kit.styleSpec);
-  const styleSpec = options.suppressHeader ? stripHeaderDirectives(learned) : learned;
-  const palette = kit.colors.filter((color) => color.hex).map((color) => `${color.name} ${color.hex}`).join(", ");
+export function brandKitContext(kit: BrandKit): string {
+  // Neither borrowed content nor the reference's identity/profile header strip
+  // is ever wanted, in any format, so both are scrubbed unconditionally.
+  const styleSpec = stripHeaderDirectives(stripBorrowedContent(kit.styleSpec));
+  const palette = kit.colors.filter((color) => color.hex).map((color) => {
+    const role = color.role ? ` (${color.role})` : "";
+    const usage = color.usage ? `: ${color.usage}` : "";
+    return `- ${color.name} ${color.hex}${role}${usage}`;
+  }).join("\n");
   const references = [
     kit.assets.face ? "founder face" : "",
     kit.assets.logo ? "logo" : "",
@@ -338,15 +383,22 @@ export function brandKitContext(kit: BrandKit, options: { suppressHeader?: boole
   // Only emit fields the founder has actually set, so an unconfigured kit stays
   // minimal and agents fall back to the second brain's Voice DNA instead of
   // empty labels.
-  const configured = kit.displayName || kit.voice || styleSpec || kit.tagline;
+  const configured = kit.displayName || kit.voice || styleSpec || kit.tagline || kit.positioning;
   return [
     `# Brand Kit: ${kit.displayName || "Not configured yet"}`,
     kit.handle ? `Handle: @${kit.handle}` : "",
     kit.tagline ? `Tagline: ${kit.tagline}` : "",
     kit.website ? `Website: ${kit.website}` : "",
-    palette ? `Palette: ${palette}` : "",
+    kit.positioning ? `Positioning: ${kit.positioning}` : "",
+    kit.audience ? `Audience: ${kit.audience}` : "",
+    kit.personality ? `Brand personality: ${kit.personality}` : "",
+    palette ? `Palette:\n${palette}` : "",
     kit.headlineFont ? `Headline typography: ${kit.headlineFont}` : "",
     kit.bodyFont ? `Body typography: ${kit.bodyFont}` : "",
+    kit.typeHierarchy ? `Type hierarchy:\n${kit.typeHierarchy}` : "",
+    kit.imagery ? `Imagery, icons and graphics:\n${kit.imagery}` : "",
+    kit.dos ? `Visual do's:\n${kit.dos}` : "",
+    kit.donts ? `Visual don'ts:\n${kit.donts}` : "",
     kit.voice ? `Voice: ${kit.voice}` : "",
     kit.vocabulary ? `Preferred language: ${kit.vocabulary}` : "",
     kit.avoid ? `Avoid: ${kit.avoid}` : "",

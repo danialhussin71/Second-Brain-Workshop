@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleNotch,
+  Compass,
+  FileText,
   Fingerprint,
   Flask,
   FloppyDisk,
@@ -11,6 +13,7 @@ import {
   PaintBrushBroad,
   Palette,
   Scan,
+  Shapes,
   ShieldCheck,
   Signature,
   TextAa,
@@ -20,9 +23,8 @@ import {
   Waveform,
 } from "@phosphor-icons/react";
 import type { BrandAsset, BrandColor, BrandKit } from "@/lib/brand-kit";
-import { carouselHeader, loadImageElement, renderBrandHeader } from "@/lib/carousel-header";
 
-type Busy = "load" | "save" | "face" | "logo" | "reference" | "analyze" | "remove" | null;
+type Busy = "load" | "save" | "face" | "logo" | "reference" | "identity" | "remove" | null;
 
 const inputClass = "mt-1.5 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-fuchsia-300/45 focus:bg-black/30";
 const assetUrl = (kind: BrandAsset["kind"], bust: number, id?: string) =>
@@ -35,6 +37,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
   const [message, setMessage] = useState("");
   const [bust, setBust] = useState(0);
   const referenceInput = useRef<HTMLInputElement>(null);
+  const identityInput = useRef<HTMLInputElement>(null);
 
   async function load() {
     setBusy("load");
@@ -56,7 +59,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
   const update = (patch: Partial<BrandKit>) => setKit((current) => current ? { ...current, ...patch } : current);
   const readiness = useMemo(() => {
     if (!kit) return { score: 0, done: 0, total: 8 };
-    const checks = [kit.displayName, kit.tagline, kit.colors.length >= 5, kit.headlineFont, kit.bodyFont, kit.voice, kit.assets.face, kit.assets.references.length];
+    const checks = [kit.displayName, kit.tagline, kit.colors.length >= 5, kit.headlineFont, kit.bodyFont, kit.voice, kit.assets.face, kit.assets.identity];
     const done = checks.filter(Boolean).length;
     return { done, total: checks.length, score: Math.round(done / checks.length * 100) };
   }, [kit]);
@@ -67,33 +70,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     window.dispatchEvent(new Event("jarvis-brand-updated"));
   };
 
-  /**
-   * Re-render the locked carousel header from the freshly saved kit and store
-   * it on Blob. Rendered once here — carousels then send it to the image model
-   * as an exact reference AND stamp it over each slide, so the header can
-   * never drift between slides. Best-effort: a header sync failure never
-   * blocks the save itself.
-   */
-  async function syncLockedHeader(next: BrandKit) {
-    try {
-      const spec = carouselHeader(next);
-      if (!spec) {
-        await fetch("/api/brand/header", { method: "DELETE" });
-        return;
-      }
-      const avatar = next.assets.face
-        ? await loadImageElement(assetUrl("face", Date.now())).catch(() => null)
-        : null;
-      const blob = await renderBrandHeader(spec, avatar);
-      if (!blob) return;
-      const form = new FormData();
-      form.append("file", new File([blob], "locked-header.png", { type: "image/png" }));
-      await fetch("/api/brand/header", { method: "POST", body: form });
-    } catch {
-      /* non-fatal — the next save will retry */
-    }
-  }
-
   async function save() {
     if (!kit) return;
     setBusy("save");
@@ -103,7 +79,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Save failed.");
       setKit(data.kit);
-      await syncLockedHeader(data.kit);
       notify("Brand system saved. Every marketing agent will use it.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed.");
@@ -124,7 +99,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       if (!response.ok) throw new Error(data.error || "Upload failed.");
       setKit(data.kit);
       setBust((value) => value + 1);
-      if (kind === "face") await syncLockedHeader(data.kit);
       notify(kind === "reference" ? "Style reference added." : `${kind === "face" ? "Founder face" : "Logo"} updated.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -133,8 +107,9 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     }
   }
 
-  async function uploadReferences(files: FileList | null) {
-    for (const file of Array.from(files || []).slice(0, Math.max(0, 4 - (kit?.assets.references.length || 0)))) await upload("reference", file);
+  async function uploadReferences(files: FileList | File[] | null) {
+    const images = Array.from(files || []).filter((file) => /^image\/(png|jpeg|webp)$/.test(file.type));
+    for (const file of images.slice(0, Math.max(0, 4 - (kit?.assets.references.length || 0)))) await upload("reference", file);
     if (referenceInput.current) referenceInput.current.value = "";
   }
 
@@ -146,7 +121,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       if (!response.ok) throw new Error(data.error || "Could not remove asset.");
       setKit(data.kit);
       setBust((value) => value + 1);
-      if (kind === "face") await syncLockedHeader(data.kit);
       notify("Brand asset removed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not remove asset.");
@@ -155,19 +129,27 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     }
   }
 
-  async function analyzeReferences() {
-    setBusy("analyze");
-    setMessage("GPT-5.6 Sol is reverse-engineering the visual system…");
+  /** Upload a new identity document (or re-read the stored one) and extract the brand system from it. */
+  async function extractIdentity(file?: File) {
+    if (file && !/\.(md|markdown|txt)$/i.test(file.name)) {
+      setMessage("Upload your visual identity as a .md file.");
+      return;
+    }
+    setBusy("identity");
+    setMessage("GPT-5.6 Sol is reading your visual identity…");
     try {
-      const response = await fetch("/api/brand/extract", { method: "POST" });
+      const form = new FormData();
+      if (file) form.append("file", file);
+      const response = await fetch("/api/brand/extract", { method: "POST", body: form });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Analysis failed.");
+      if (!response.ok) throw new Error(data.error || "Extraction failed.");
       setKit(data.kit);
-      notify(`Visual system learned from ${data.analyzed} reference${data.analyzed === 1 ? "" : "s"}. Review and save when ready.`);
+      notify("Brand system extracted from your visual identity. Review and save when ready.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Analysis failed.");
+      setMessage(error instanceof Error ? error.message : "Extraction failed.");
     } finally {
       setBusy(null);
+      if (identityInput.current) identityInput.current.value = "";
     }
   }
 
@@ -197,12 +179,23 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     </section>
 
     <section className="rounded-2xl border border-cyan-300/15 bg-cyan-400/[.035] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<Flask size={16} weight="duotone" />} title="Visual reference lab" detail="Upload up to four great examples. Jarvis learns the recurring system, not just the mood." /><button onClick={() => void analyzeReferences()} disabled={busy !== null || !kit.assets.references.length} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "analyze" ? <CircleNotch size={14} className="animate-spin" /> : <Scan size={14} weight="duotone" />}Learn style from references</button></div>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        {kit.assets.references.map((asset) => <ReferenceTile key={asset.id} asset={asset} bust={bust} onRemove={() => void remove("reference", asset.id)} />)}
-        {kit.assets.references.length < 4 && <button onClick={() => referenceInput.current?.click()} disabled={busy !== null} className="group flex aspect-[4/5] min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 text-white/35 transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-40"><UploadSimple size={19} weight="bold" /><span className="text-[10px] font-medium">Add references</span></button>}
+      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<FileText size={16} weight="duotone" />} title="Visual identity" detail="Upload your visual identity .md. Jarvis extracts the palette, typography, imagery, rules and locked style below from it." />{kit.assets.identity && <button onClick={() => void extractIdentity()} disabled={busy !== null} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "identity" ? <CircleNotch size={14} className="animate-spin" /> : <Scan size={14} weight="duotone" />}Re-extract</button>}</div>
+      <DropZone accept={(file) => /\.(md|markdown|txt)$/i.test(file.name)} disabled={busy !== null} onFiles={(files) => files[0] && void extractIdentity(files[0])} onClick={() => identityInput.current?.click()} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-5 text-center text-white/40">
+        {busy === "identity" ? <CircleNotch size={20} className="animate-spin text-cyan-200" /> : <UploadSimple size={19} weight="bold" />}
+        {kit.assets.identity
+          ? <><span className="text-xs font-medium text-white/75">{kit.assets.identity.name}</span><span className="text-[10px]">Extracted {new Date(kit.assets.identity.updatedAt).toLocaleDateString()}. Drop a new .md to replace it.</span></>
+          : <><span className="text-xs font-medium">Drop your visual identity .md here</span><span className="text-[10px]">or click to choose a file</span></>}
+      </DropZone>
+      <input ref={identityInput} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" onChange={(event) => event.target.files?.[0] && void extractIdentity(event.target.files[0])} />
+    </section>
+
+    <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+      <SectionTitle icon={<Compass size={16} weight="duotone" />} title="Positioning and personality" detail="Who the brand serves and how it must be perceived. Shapes every visual and written decision." />
+      <div className="mt-0 grid gap-x-3 sm:grid-cols-2">
+        <TextField label="Positioning" value={kit.positioning} onChange={(positioning) => update({ positioning })} placeholder="What you sell, to whom, and the space you own…" rows={4} />
+        <TextField label="Audience" value={kit.audience} onChange={(audience) => update({ audience })} placeholder="Your ideal customer and what they need to feel…" rows={4} />
       </div>
-      <input ref={referenceInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => void uploadReferences(event.target.files)} />
+      <TextField label="Personality" value={kit.personality} onChange={(personality) => update({ personality })} placeholder="Perception words, and the looks and clichés to never resemble…" rows={3} />
     </section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
@@ -218,12 +211,12 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
       <SectionTitle icon={<Palette size={16} weight="duotone" />} title="Colour system" detail="Exact values are injected into visual prompts. The first colour is the main accent." />
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {kit.colors.slice(0, 6).map((color, index) => <ColorControl key={color.id} color={color} onChange={(next) => update({ colors: kit.colors.map((item, itemIndex) => itemIndex === index ? next : item) })} />)}
+        {kit.colors.slice(0, 8).map((color, index) => <ColorControl key={color.id} color={color} onChange={(next) => update({ colors: kit.colors.map((item, itemIndex) => itemIndex === index ? next : item) })} />)}
       </div>
     </section>
 
     <section className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<TextAa size={16} weight="duotone" />} title="Typography" detail="Describe usable font families or a clear typographic character." /><div className="mt-4 space-y-3"><InputField label="Headline system" value={kit.headlineFont} onChange={(headlineFont) => update({ headlineFont })} placeholder="Heavy condensed grotesque" /><InputField label="Body system" value={kit.bodyFont} onChange={(bodyFont) => update({ bodyFont })} placeholder="Rounded geometric sans-serif" /></div></div>
+      <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<TextAa size={16} weight="duotone" />} title="Typography" detail="Describe usable font families or a clear typographic character." /><div className="mt-4 space-y-3"><InputField label="Headline system" value={kit.headlineFont} onChange={(headlineFont) => update({ headlineFont })} placeholder="Heavy condensed grotesque" /><InputField label="Body system" value={kit.bodyFont} onChange={(bodyFont) => update({ bodyFont })} placeholder="Rounded geometric sans-serif" /><TextField label="Hierarchy" value={kit.typeHierarchy} onChange={(typeHierarchy) => update({ typeHierarchy })} placeholder="H1: font, weight, size, line height…" rows={4} /></div></div>
       <div className="rounded-2xl border border-white/10 bg-white/[.025] p-4"><SectionTitle icon={<Waveform size={16} weight="duotone" />} title="Voice DNA" detail="How the brand should sound when Jarvis writes." /><TextField label="Tone and rhythm" value={kit.voice} onChange={(voice) => update({ voice })} placeholder="Direct, warm, short sentences…" rows={5} /></div>
     </section>
 
@@ -232,14 +225,29 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       <div className="mt-4 grid gap-3 sm:grid-cols-2"><TextField label="Use more of" value={kit.vocabulary} onChange={(vocabulary) => update({ vocabulary })} placeholder="Favourite words, phrases, patterns, beliefs…" rows={5} /><TextField label="Never use" value={kit.avoid} onChange={(avoid) => update({ avoid })} placeholder="Banned phrases, clichés, punctuation, claims…" rows={5} /></div>
     </section>
 
+    <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+      <SectionTitle icon={<Shapes size={16} weight="duotone" />} title="Imagery and visual rules" detail="Photography, icons, graphic style and the hard do's and don'ts every visual must follow." />
+      <TextField label="Imagery, icons and layout" value={kit.imagery} onChange={(imagery) => update({ imagery })} placeholder="Photography, illustration, graphic style, icon set, layout…" rows={5} />
+      <div className="grid gap-x-3 sm:grid-cols-2"><TextField label="Do" value={kit.dos} onChange={(dos) => update({ dos })} placeholder="1. Open every carousel on the primary colour…" rows={6} /><TextField label="Don't" value={kit.donts} onChange={(donts) => update({ donts })} placeholder="1. Never put the accent behind body text…" rows={6} /></div>
+    </section>
+
     <section className="rounded-2xl border border-fuchsia-300/15 bg-fuchsia-400/[.025] p-4">
       <SectionTitle icon={<PaintBrushBroad size={16} weight="duotone" />} title="Locked visual style" detail="The production specification applied to every carousel slide and generated visual." />
       <textarea value={kit.styleSpec} onChange={(event) => update({ styleSpec: event.target.value })} rows={12} spellCheck={false} className={`${inputClass} min-h-52 resize-y font-mono text-[11px] leading-relaxed`} placeholder="Describe composition, palette, hierarchy, repeatable components, imagery, spacing, and consistency rules…" />
       <TextField label="Additional production notes" value={kit.notes} onChange={(notes) => update({ notes })} placeholder="Anything else the team must preserve…" rows={4} />
     </section>
 
+    <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+      <SectionTitle icon={<Flask size={16} weight="duotone" />} title="Style references" detail="Optional. Drop up to four example images; they are passed to GPT Image 2 as look references alongside your identity." />
+      <DropZone accept={(file) => /^image\/(png|jpeg|webp)$/.test(file.type)} disabled={busy !== null} onFiles={(files) => void uploadReferences(files)} className="mt-4 grid grid-cols-2 gap-2 rounded-xl sm:grid-cols-5">
+        {kit.assets.references.map((asset) => <ReferenceTile key={asset.id} asset={asset} bust={bust} onRemove={() => void remove("reference", asset.id)} />)}
+        {kit.assets.references.length < 4 && <button onClick={() => referenceInput.current?.click()} disabled={busy !== null} className="group flex aspect-[4/5] min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 text-white/35 transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-40">{busy === "reference" ? <CircleNotch size={19} className="animate-spin" /> : <UploadSimple size={19} weight="bold" />}<span className="px-2 text-center text-[10px] font-medium">Drop or add references</span></button>}
+      </DropZone>
+      <input ref={referenceInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => void uploadReferences(event.target.files)} />
+    </section>
+
     <div className="sticky bottom-0 z-10 -mx-5 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080b12]/92 px-5 py-3 backdrop-blur-xl">
-      <div><p className={`text-[11px] ${message ? "text-cyan-100/75" : "text-white/35"}`}>{message || (connected ? "Stored privately in Vercel Blob" : "Connect Vercel Blob to save changes")}</p><p className="mt-0.5 text-[9px] text-white/25">Face, logo, palette, voice, and references flow into production.</p></div>
+      <div><p className={`text-[11px] ${message ? "text-cyan-100/75" : "text-white/35"}`}>{message || (connected ? "Stored privately in Vercel Blob" : "Connect Vercel Blob to save changes")}</p><p className="mt-0.5 text-[9px] text-white/25">Face, logo, identity, palette, voice, and references flow into production.</p></div>
       <button onClick={() => void save()} disabled={busy !== null || !connected} className="flex shrink-0 items-center gap-2 rounded-xl bg-fuchsia-300 px-4 py-2.5 text-xs font-semibold text-[#18051b] shadow-[0_0_28px_rgba(232,121,249,.18)] transition hover:bg-fuchsia-200 disabled:opacity-40">{busy === "save" ? <CircleNotch size={15} className="animate-spin" /> : <FloppyDisk size={15} weight="bold" />}Save brand system</button>
     </div>
   </div>;
@@ -276,5 +284,20 @@ function TextField({ label, value, onChange, placeholder, rows }: { label: strin
 }
 
 function ColorControl({ color, onChange }: { color: BrandColor; onChange: (value: BrandColor) => void }) {
-  return <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/15 p-2"><label className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-white/15" style={{ background: color.hex }}><input aria-label={`${color.name} color picker`} type="color" value={color.hex} onChange={(event) => onChange({ ...color, hex: event.target.value.toUpperCase() })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /></label><div className="min-w-0 flex-1"><input aria-label={`${color.name} name`} value={color.name} onChange={(event) => onChange({ ...color, name: event.target.value })} className="w-full bg-transparent text-[11px] font-medium text-white/70 outline-none" /><input aria-label={`${color.name} hex`} value={color.hex} onChange={(event) => onChange({ ...color, hex: event.target.value.toUpperCase() })} className="mt-0.5 w-full bg-transparent font-mono text-[10px] uppercase text-white/30 outline-none" /></div></div>;
+  return <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/15 p-2"><label className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-white/15" style={{ background: color.hex }}><input aria-label={`${color.name} color picker`} type="color" value={color.hex} onChange={(event) => onChange({ ...color, hex: event.target.value.toUpperCase() })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /></label><div className="min-w-0 flex-1"><input aria-label={`${color.name} name`} value={color.name} onChange={(event) => onChange({ ...color, name: event.target.value })} className="w-full bg-transparent text-[11px] font-medium text-white/70 outline-none" /><input aria-label={`${color.name} hex`} value={color.hex} onChange={(event) => onChange({ ...color, hex: event.target.value.toUpperCase() })} className="mt-0.5 w-full bg-transparent font-mono text-[10px] uppercase text-white/30 outline-none" /><div className="mt-0.5 flex gap-2"><input aria-label={`${color.name} role`} value={color.role || ""} onChange={(event) => onChange({ ...color, role: event.target.value })} placeholder="Role" className="w-16 shrink-0 bg-transparent text-[10px] text-white/45 outline-none placeholder:text-white/20" /><input aria-label={`${color.name} usage`} value={color.usage || ""} onChange={(event) => onChange({ ...color, usage: event.target.value })} placeholder="Where it's used" className="min-w-0 flex-1 bg-transparent text-[10px] text-white/40 outline-none placeholder:text-white/20" /></div></div></div>;
+}
+
+/** A drag-and-drop target; clicks pass through to children unless onClick is given. */
+function DropZone({ accept, disabled, onFiles, onClick, className, children }: { accept: (file: File) => boolean; disabled: boolean; onFiles: (files: File[]) => void; onClick?: () => void; className: string; children: React.ReactNode }) {
+  const [over, setOver] = useState(false);
+  return <div
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onClick={disabled ? undefined : onClick}
+    onKeyDown={(event) => { if (onClick && !disabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onClick(); } }}
+    onDragOver={(event) => { event.preventDefault(); if (!disabled) setOver(true); }}
+    onDragLeave={() => setOver(false)}
+    onDrop={(event) => { event.preventDefault(); setOver(false); if (disabled) return; const files = Array.from(event.dataTransfer.files).filter(accept); if (files.length) onFiles(files); }}
+    className={`${className} transition ${onClick && !disabled ? "cursor-pointer hover:border-cyan-300/40 hover:text-cyan-100" : ""} ${over ? "outline outline-2 outline-offset-2 outline-cyan-300/60" : ""} ${disabled ? "opacity-60" : ""}`}
+  >{children}</div>;
 }
