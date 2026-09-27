@@ -240,7 +240,7 @@ function SectionTitle({ icon, title, detail }: { icon: React.ReactNode; title: s
 function BrandPreview({ kit, accent, ink, bust }: { kit: BrandKit; accent: string; ink: string; bust: number }) {
   return <div className="relative min-h-60 overflow-hidden rounded-2xl border border-white/10 p-5" style={{ background: `radial-gradient(circle at 76% 14%, ${accent}55, transparent 38%), linear-gradient(145deg, ${ink}, #030409)` }}>
     <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-    <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3">{kit.assets.face ? <img src={assetUrl("face", bust)} alt="Founder" className="h-14 w-14 rounded-full border-2 object-cover" style={{ borderColor: accent }} /> : <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/5"><UserCircle size={24} className="text-white/35" /></div>}<div><p className="text-base font-semibold text-white">{kit.displayName || "Your name"}</p><p className="text-[10px] text-white/50">{kit.handle ? `@${kit.handle}` : "@handle"}</p></div></div>{kit.assets.logo ? <img src={assetUrl("logo", bust)} alt="Logo" className="h-9 max-w-24 object-contain" /> : <div className="rounded-lg border border-white/10 px-2 py-1 text-[9px] uppercase tracking-[.18em] text-white/30">Logo</div>}</div>
+    <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3">{kit.assets.face ? <AssetImage overlay={false} src={assetUrl("face", bust)} alt="Founder" className="h-14 w-14 rounded-full border-2 object-cover" style={{ borderColor: accent }} /> : <div className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/5"><UserCircle size={24} className="text-white/35" /></div>}<div><p className="text-base font-semibold text-white">{kit.displayName || "Your name"}</p><p className="text-[10px] text-white/50">{kit.handle ? `@${kit.handle}` : "@handle"}</p></div></div>{kit.assets.logo ? <AssetImage overlay={false} src={assetUrl("logo", bust)} alt="Logo" className="h-9 max-w-24 object-contain" /> : <div className="rounded-lg border border-white/10 px-2 py-1 text-[9px] uppercase tracking-[.18em] text-white/30">Logo</div>}</div>
     <div className="mt-11 max-w-[85%]"><p className="text-[9px] font-semibold uppercase tracking-[.22em]" style={{ color: accent }}>Brand preview</p><p className="mt-2 text-2xl font-black uppercase leading-[.95] tracking-tight text-white" style={{ fontFamily: "Impact, Haettenschweiler, sans-serif" }}>{kit.tagline || "Your defining idea lives here"}</p><p className="mt-3 text-[10px] leading-relaxed text-white/45">One identity. One visual language. Every deliverable unmistakably yours.</p></div>
     <div className="absolute bottom-4 left-5 flex gap-1.5">{kit.colors.slice(0, 5).map((color) => <span key={color.id} title={`${color.name} ${color.hex}`} className="h-3 w-3 rounded-full border border-white/20" style={{ background: color.hex }} />)}</div><span className="absolute bottom-4 right-5 text-[9px] text-white/25">01</span>
   </div>;
@@ -248,11 +248,11 @@ function BrandPreview({ kit, accent, ink, bust }: { kit: BrandKit; accent: strin
 
 function PrimaryAssetCard({ label, hint, kind, asset, bust, busy, onPick, onRemove }: { label: string; hint: string; kind: "face" | "logo"; asset: BrandAsset | null; bust: number; busy: boolean; onPick: (file: File) => void; onRemove: () => void }) {
   const input = useRef<HTMLInputElement>(null);
-  return <div className="rounded-xl border border-white/8 bg-black/15 p-3"><div className="mb-2 flex items-center justify-between"><div><p className="text-xs font-medium text-white/75">{label}</p><p className="mt-0.5 text-[9px] text-white/30">{hint}</p></div>{asset && <button aria-label={`Remove ${label}`} onClick={onRemove} className="rounded-lg p-1.5 text-white/25 transition hover:bg-rose-400/10 hover:text-rose-300"><Trash size={13} /></button>}</div><button onClick={() => input.current?.click()} disabled={busy} className="group relative grid h-32 w-full place-items-center overflow-hidden rounded-xl border border-dashed border-white/12 bg-black/25 transition hover:border-fuchsia-300/40 disabled:opacity-50">{asset ? <img src={assetUrl(kind, bust)} alt={label} className={`h-full w-full ${kind === "face" ? "object-cover" : "object-contain p-4"}`} /> : <span className="flex flex-col items-center gap-2 text-white/30">{busy ? <CircleNotch size={20} className="animate-spin" /> : kind === "face" ? <UserCircle size={22} weight="duotone" /> : <ImageSquare size={22} weight="duotone" />}<span className="text-[10px]">Upload {label.toLowerCase()}</span></span>}<span className="absolute inset-0 hidden items-center justify-center bg-black/60 text-[10px] font-semibold text-white group-hover:flex">{asset ? "Replace" : "Choose image"}</span></button><input ref={input} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && onPick(event.target.files[0])} /></div>;
+  return <div className="rounded-xl border border-white/8 bg-black/15 p-3"><div className="mb-2 flex items-center justify-between"><div><p className="text-xs font-medium text-white/75">{label}</p><p className="mt-0.5 text-[9px] text-white/30">{hint}</p></div>{asset && <button aria-label={`Remove ${label}`} onClick={onRemove} className="rounded-lg p-1.5 text-white/25 transition hover:bg-rose-400/10 hover:text-rose-300"><Trash size={13} /></button>}</div><button onClick={() => input.current?.click()} disabled={busy} className="group relative grid h-32 w-full place-items-center overflow-hidden rounded-xl border border-dashed border-white/12 bg-black/25 transition hover:border-fuchsia-300/40 disabled:opacity-50">{asset ? <AssetImage src={assetUrl(kind, bust)} alt={label} className={`h-full w-full ${kind === "face" ? "object-cover" : "object-contain p-4"}`} /> : <span className="flex flex-col items-center gap-2 text-white/30">{busy ? <CircleNotch size={20} className="animate-spin" /> : kind === "face" ? <UserCircle size={22} weight="duotone" /> : <ImageSquare size={22} weight="duotone" />}<span className="text-[10px]">Upload {label.toLowerCase()}</span></span>}<span className="absolute inset-0 hidden items-center justify-center bg-black/60 text-[10px] font-semibold text-white group-hover:flex">{asset ? "Replace" : "Choose image"}</span></button><input ref={input} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => event.target.files?.[0] && onPick(event.target.files[0])} /></div>;
 }
 
 function ReferenceTile({ asset, bust, onRemove }: { asset: BrandAsset; bust: number; onRemove: () => void }) {
-  return <div className="group relative aspect-[4/5] min-h-28 overflow-hidden rounded-xl border border-white/10 bg-black/25"><img src={assetUrl("reference", bust, asset.id)} alt={asset.name} className="h-full w-full object-cover" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 pt-8"><p className="truncate text-[9px] text-white/70">{asset.name}</p></div><button aria-label={`Remove ${asset.name}`} onClick={onRemove} className="absolute right-1.5 top-1.5 rounded-lg border border-white/10 bg-black/60 p-1.5 text-white/55 opacity-0 backdrop-blur transition hover:text-rose-300 group-hover:opacity-100"><Trash size={12} /></button></div>;
+  return <div className="group relative aspect-[4/5] min-h-28 overflow-hidden rounded-xl border border-white/10 bg-black/25"><AssetImage src={assetUrl("reference", bust, asset.id)} alt={asset.name} className="h-full w-full object-cover" /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 pt-8"><p className="truncate text-[9px] text-white/70">{asset.name}</p></div><button aria-label={`Remove ${asset.name}`} onClick={onRemove} className="absolute right-1.5 top-1.5 rounded-lg border border-white/10 bg-black/60 p-1.5 text-white/55 opacity-0 backdrop-blur transition hover:text-rose-300 group-hover:opacity-100"><Trash size={12} /></button></div>;
 }
 
 function InputField({ label, value, onChange, placeholder, prefix, wide = false }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; prefix?: string; wide?: boolean }) {
@@ -280,4 +280,34 @@ function DropZone({ accept, disabled, onFiles, onClick, className, children }: {
     onDrop={(event) => { event.preventDefault(); setOver(false); if (disabled) return; const files = Array.from(event.dataTransfer.files).filter(accept); if (files.length) onFiles(files); }}
     className={`${className} transition ${onClick && !disabled ? "cursor-pointer hover:border-cyan-300/40 hover:text-cyan-100" : ""} ${over ? "outline outline-2 outline-offset-2 outline-cyan-300/60" : ""} ${disabled ? "opacity-60" : ""}`}
   >{children}</div>;
+}
+
+/**
+ * A brand asset thumbnail that rides out transient load failures. On error it
+ * retries a few times with a fresh URL, so a Blob hiccup never surfaces as a
+ * broken-image icon with the filename. `overlay` draws a spinner/placeholder
+ * over the slot and needs a positioned parent.
+ */
+function AssetImage({ src, alt, className, style, overlay = true }: { src: string; alt: string; className?: string; style?: React.CSSProperties; overlay?: boolean }) {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  useEffect(() => {
+    setAttempt(0);
+    setState("loading");
+  }, [src]);
+  const onError = () => {
+    if (attempt >= 3) return setState("failed");
+    window.setTimeout(() => setAttempt((value) => value + 1), 600 * (attempt + 1));
+  };
+  const url = attempt ? `${src}&retry=${attempt}` : src;
+  const img = useRef<HTMLImageElement>(null);
+  // A cached image can finish before onLoad is attached.
+  useEffect(() => {
+    if (img.current?.complete && img.current.naturalWidth) setState("ready");
+  }, [url]);
+  return <>
+    {/* alt stays empty until loaded, so a failed attempt never paints the filename */}
+    <img ref={img} key={url} src={url} alt={state === "ready" ? alt : ""} style={style} onLoad={() => setState("ready")} onError={onError} className={`${className || ""} ${state === "ready" ? "" : "invisible"}`} />
+    {overlay && state !== "ready" && <span className="pointer-events-none absolute inset-0 grid place-items-center text-white/25">{state === "loading" ? <CircleNotch size={16} className="animate-spin" /> : <ImageSquare size={20} weight="duotone" />}</span>}
+  </>;
 }

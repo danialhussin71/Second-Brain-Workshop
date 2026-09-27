@@ -220,11 +220,18 @@ export async function removeBrandAsset(kind: BrandAsset["kind"], id?: string): P
 }
 
 export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
-  const kit = await getBrandKit();
-  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kit.assets.references.find((item) => item.id === id) || null;
-  if (!asset) return null;
-  const bytes = await blobGetBytes(asset.path);
-  return bytes ? { ...bytes, asset } : null;
+  // Blob reads occasionally come back empty under concurrent load (the studio
+  // fetches every thumbnail at once, often while an extract reads them too).
+  // A miss here is almost always transient, so retry before reporting a 404.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    const kit = await getBrandKit();
+    const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kit.assets.references.find((item) => item.id === id) || null;
+    if (!asset) continue;
+    const bytes = await blobGetBytes(asset.path);
+    if (bytes) return { ...bytes, asset };
+  }
+  return null;
 }
 
 export async function loadBrandReferenceImages(): Promise<BrandReferenceImage[]> {
