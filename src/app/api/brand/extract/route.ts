@@ -10,6 +10,10 @@ type Extraction = {
   colors: BrandColor[];
   headlineFont: string;
   bodyFont: string;
+  typeHierarchy: string;
+  imagery: string;
+  dos: string;
+  donts: string;
   voice: string;
   vocabulary: string;
   avoid: string;
@@ -19,17 +23,27 @@ type Extraction = {
 const EXTRACTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["colors", "headlineFont", "bodyFont", "voice", "vocabulary", "avoid", "styleSpec"],
+  required: ["colors", "headlineFont", "bodyFont", "typeHierarchy", "imagery", "dos", "donts", "voice", "vocabulary", "avoid", "styleSpec"],
   properties: {
     colors: {
       type: "array", minItems: 5, maxItems: 5,
       items: {
-        type: "object", additionalProperties: false, required: ["id", "name", "hex"],
-        properties: { id: { type: "string" }, name: { type: "string" }, hex: { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" } },
+        type: "object", additionalProperties: false, required: ["id", "name", "hex", "role", "usage"],
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          hex: { type: "string", pattern: "^#[0-9A-Fa-f]{6}$" },
+          role: { type: "string", description: "Primary, Secondary, Accent, Dark or Light." },
+          usage: { type: "string", description: "Roughly how much of the design it covers and where, e.g. \"60%: slide backgrounds\"." },
+        },
       },
     },
     headlineFont: { type: "string" },
     bodyFont: { type: "string" },
+    typeHierarchy: { type: "string", description: "Headline, subhead, body and label levels: weight, relative size, case, line height, colour." },
+    imagery: { type: "string", description: "Photography, illustration, icon and graphic treatment, and recurring layout components. Form only." },
+    dos: { type: "string", description: "Numbered visual rules every design must follow to match the references." },
+    donts: { type: "string", description: "Numbered visual rules every design must avoid to stay on-brand." },
     voice: { type: "string" },
     vocabulary: { type: "string" },
     avoid: { type: "string" },
@@ -66,7 +80,7 @@ export async function POST() {
     const current = await getBrandKit();
     const brainSample = await loadBrainVoiceSample();
     const content: Array<Record<string, string>> = [
-      { type: "input_text", text: "Reverse-engineer a production-ready visual brand system from these references. Identify exact dominant colours, typography character, layout grammar, imagery treatment, spacing, contrast, and rules needed to keep a generated carousel coherent. Do not identify an exact copyrighted font unless unmistakable; describe a close usable category.\n\nDESCRIBE FORM, NEVER SUBJECT MATTER. These references are borrowed purely for their look. Whatever they happen to be about is somebody else's message and must not survive into the spec. Describe the shape, size, position and treatment of what you see; never what it says or depicts. Write \"a short all-caps label sits top-left at 60% opacity\", never \"the label reads JOIN US\". Write \"a rounded pill button in the accent colour, bottom-centre\", never \"a Register button linking to Zoom\".\n\nThe styleSpec must contain NO literal copy from the references: no headlines, taglines, slogans, body sentences, button labels, dates, times, prices, URLs, links, handles, addresses, phone numbers, hashtags, event details, product names, company names, or person names. It must not describe the topic, occasion, campaign or offer the references are for. A reader of your styleSpec should be able to tell exactly how the brand looks and be unable to guess what the references were about.\n\nVoice fields describe TONE ONLY — the register, rhythm and diction of the writing, never its subject. Preserve the existing voice when the references do not establish it." },
+      { type: "input_text", text: "Reverse-engineer a production-ready visual brand system from these references. Identify exact dominant colours, typography character, layout grammar, imagery treatment, spacing, contrast, and rules needed to keep a generated carousel coherent. Do not identify an exact copyrighted font unless unmistakable; describe a close usable category.\n\nDESCRIBE FORM, NEVER SUBJECT MATTER. These references are borrowed purely for their look. Whatever they happen to be about is somebody else's message and must not survive into the spec. Describe the shape, size, position and treatment of what you see; never what it says or depicts. Write \"a short all-caps label sits top-left at 60% opacity\", never \"the label reads JOIN US\". Write \"a rounded pill button in the accent colour, bottom-centre\", never \"a Register button linking to Zoom\".\n\nThe styleSpec must contain NO literal copy from the references: no headlines, taglines, slogans, body sentences, button labels, dates, times, prices, URLs, links, handles, addresses, phone numbers, hashtags, event details, product names, company names, or person names. It must not describe the topic, occasion, campaign or offer the references are for. A reader of your styleSpec should be able to tell exactly how the brand looks and be unable to guess what the references were about. The same applies to typeHierarchy, imagery, dos and donts.\n\nIGNORE ANY PROFILE HEADER STRIP. Many references are social posts with an avatar, name, handle, tagline or repost button along the top. That strip is platform chrome, not part of the design — never describe it, never reserve space for it, and never make it a recurring component or rule.\n\nVoice fields describe TONE ONLY — the register, rhythm and diction of the writing, never its subject. Preserve the existing voice when the references do not establish it." },
       ...references.map((image) => ({ type: "input_image", image_url: `data:${image.type};base64,${Buffer.from(image.data).toString("base64")}` })),
     ];
     if (brainSample) {

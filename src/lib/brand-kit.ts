@@ -4,14 +4,12 @@ export const BRAND_KIT_PATH = "owner/brand/kit.json";
 const BRAND_ASSET_PREFIX = "owner/brand/assets";
 /** The pre-rendered locked carousel header (rendered client-side at kit save). */
 export const BRAND_HEADER_PATH = "owner/brand/assets/locked-header.png";
-/** The founder's uploaded visual identity document, kept verbatim for re-extraction. */
-export const BRAND_IDENTITY_PATH = "owner/brand/assets/identity.md";
 
 export type BrandColor = {
   id: string;
   name: string;
   hex: string;
-  /** Primary / Secondary / Accent / Dark / Light, as the identity doc assigns it. */
+  /** Primary / Secondary / Accent / Dark / Light, as learned from the design references. */
   role?: string;
   /** Share and where it is used, e.g. "55%: banners, covers, slide backgrounds". */
   usage?: string;
@@ -19,7 +17,7 @@ export type BrandColor = {
 
 export type BrandAsset = {
   id: string;
-  kind: "face" | "logo" | "reference" | "identity";
+  kind: "face" | "logo" | "reference";
   path: string;
   name: string;
   contentType: string;
@@ -50,7 +48,6 @@ export type BrandKit = {
   assets: {
     face: BrandAsset | null;
     logo: BrandAsset | null;
-    identity: BrandAsset | null;
     references: BrandAsset[];
   };
   updatedAt: string;
@@ -96,7 +93,7 @@ export const DEFAULT_BRAND_KIT: BrandKit = {
   avoid: "",
   styleSpec: "",
   notes: "",
-  assets: { face: null, logo: null, identity: null, references: [] },
+  assets: { face: null, logo: null, references: [] },
   updatedAt: "",
 };
 
@@ -164,7 +161,6 @@ export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_B
     assets: {
       face: normalizeAsset(assets.face, "face"),
       logo: normalizeAsset(assets.logo, "logo"),
-      identity: normalizeAsset(assets.identity, "identity"),
       references,
     },
     updatedAt: cleanText(raw.updatedAt, previous.updatedAt, 80),
@@ -223,26 +219,9 @@ export async function removeBrandAsset(kind: BrandAsset["kind"], id?: string): P
   return saveBrandKit(current);
 }
 
-/** Store the visual identity document verbatim and record it on the kit. */
-export async function saveBrandIdentityDoc(name: string, markdown: string): Promise<BrandKit> {
-  if (!blobConfigured()) throw new Error("Connect Vercel Blob before uploading a visual identity.");
-  await blobPutText(BRAND_IDENTITY_PATH, markdown, "text/markdown; charset=utf-8");
-  const current = await getBrandKit();
-  current.assets.identity = {
-    id: "identity", kind: "identity", path: BRAND_IDENTITY_PATH, name: name || "brand-identity.md",
-    contentType: "text/markdown", updatedAt: new Date().toISOString(),
-  };
-  return saveBrandKit(current);
-}
-
-export async function readBrandIdentityDoc(): Promise<string | null> {
-  if (!blobConfigured()) return null;
-  return blobGetText(BRAND_IDENTITY_PATH);
-}
-
 export async function readBrandAsset(kind: BrandAsset["kind"], id?: string) {
   const kit = await getBrandKit();
-  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kind === "identity" ? kit.assets.identity : kit.assets.references.find((item) => item.id === id) || null;
+  const asset = kind === "face" ? kit.assets.face : kind === "logo" ? kit.assets.logo : kit.assets.references.find((item) => item.id === id) || null;
   if (!asset) return null;
   const bytes = await blobGetBytes(asset.path);
   return bytes ? { ...bytes, asset } : null;

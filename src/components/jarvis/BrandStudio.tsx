@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleNotch,
   Compass,
-  FileText,
   Fingerprint,
   Flask,
   FloppyDisk,
@@ -24,7 +23,7 @@ import {
 } from "@phosphor-icons/react";
 import type { BrandAsset, BrandColor, BrandKit } from "@/lib/brand-kit";
 
-type Busy = "load" | "save" | "face" | "logo" | "reference" | "identity" | "remove" | null;
+type Busy = "load" | "save" | "face" | "logo" | "reference" | "analyze" | "remove" | null;
 
 const inputClass = "mt-1.5 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-fuchsia-300/45 focus:bg-black/30";
 const assetUrl = (kind: BrandAsset["kind"], bust: number, id?: string) =>
@@ -37,7 +36,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
   const [message, setMessage] = useState("");
   const [bust, setBust] = useState(0);
   const referenceInput = useRef<HTMLInputElement>(null);
-  const identityInput = useRef<HTMLInputElement>(null);
 
   async function load() {
     setBusy("load");
@@ -59,7 +57,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
   const update = (patch: Partial<BrandKit>) => setKit((current) => current ? { ...current, ...patch } : current);
   const readiness = useMemo(() => {
     if (!kit) return { score: 0, done: 0, total: 8 };
-    const checks = [kit.displayName, kit.tagline, kit.colors.length >= 5, kit.headlineFont, kit.bodyFont, kit.voice, kit.assets.face, kit.assets.identity];
+    const checks = [kit.displayName, kit.tagline, kit.colors.length >= 5, kit.headlineFont, kit.bodyFont, kit.voice, kit.assets.face, kit.assets.references.length];
     const done = checks.filter(Boolean).length;
     return { done, total: checks.length, score: Math.round(done / checks.length * 100) };
   }, [kit]);
@@ -129,27 +127,19 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     }
   }
 
-  /** Upload a new identity document (or re-read the stored one) and extract the brand system from it. */
-  async function extractIdentity(file?: File) {
-    if (file && !/\.(md|markdown|txt)$/i.test(file.name)) {
-      setMessage("Upload your visual identity as a .md file.");
-      return;
-    }
-    setBusy("identity");
-    setMessage("GPT-5.6 Sol is reading your visual identity…");
+  async function analyzeReferences() {
+    setBusy("analyze");
+    setMessage("GPT-5.6 Sol is reverse-engineering the visual system…");
     try {
-      const form = new FormData();
-      if (file) form.append("file", file);
-      const response = await fetch("/api/brand/extract", { method: "POST", body: form });
+      const response = await fetch("/api/brand/extract", { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Extraction failed.");
+      if (!response.ok) throw new Error(data.error || "Analysis failed.");
       setKit(data.kit);
-      notify("Brand system extracted from your visual identity. Review and save when ready.");
+      notify(`Visual system learned from ${data.analyzed} reference${data.analyzed === 1 ? "" : "s"}. Review and save when ready.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Extraction failed.");
+      setMessage(error instanceof Error ? error.message : "Analysis failed.");
     } finally {
       setBusy(null);
-      if (identityInput.current) identityInput.current.value = "";
     }
   }
 
@@ -179,14 +169,12 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
     </section>
 
     <section className="rounded-2xl border border-cyan-300/15 bg-cyan-400/[.035] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<FileText size={16} weight="duotone" />} title="Visual identity" detail="Upload your visual identity .md. Jarvis extracts the palette, typography, imagery, rules and locked style below from it." />{kit.assets.identity && <button onClick={() => void extractIdentity()} disabled={busy !== null} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "identity" ? <CircleNotch size={14} className="animate-spin" /> : <Scan size={14} weight="duotone" />}Re-extract</button>}</div>
-      <DropZone accept={(file) => /\.(md|markdown|txt)$/i.test(file.name)} disabled={busy !== null} onFiles={(files) => files[0] && void extractIdentity(files[0])} onClick={() => identityInput.current?.click()} className="mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-4 py-5 text-center text-white/40">
-        {busy === "identity" ? <CircleNotch size={20} className="animate-spin text-cyan-200" /> : <UploadSimple size={19} weight="bold" />}
-        {kit.assets.identity
-          ? <><span className="text-xs font-medium text-white/75">{kit.assets.identity.name}</span><span className="text-[10px]">Extracted {new Date(kit.assets.identity.updatedAt).toLocaleDateString()}. Drop a new .md to replace it.</span></>
-          : <><span className="text-xs font-medium">Drop your visual identity .md here</span><span className="text-[10px]">or click to choose a file</span></>}
+      <div className="flex flex-wrap items-start justify-between gap-3"><SectionTitle icon={<Flask size={16} weight="duotone" />} title="Design references" detail="Drop up to four examples of the look you want. Jarvis learns the palette, typography, layout and visual rules below from them, and passes them to GPT Image 2 as look references." /><button onClick={() => void analyzeReferences()} disabled={busy !== null || !kit.assets.references.length} className="flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:opacity-35">{busy === "analyze" ? <CircleNotch size={14} className="animate-spin" /> : <Scan size={14} weight="duotone" />}Learn style from references</button></div>
+      <DropZone accept={(file) => /^image\/(png|jpeg|webp)$/.test(file.type)} disabled={busy !== null} onFiles={(files) => void uploadReferences(files)} className="mt-4 grid grid-cols-2 gap-2 rounded-xl sm:grid-cols-5">
+        {kit.assets.references.map((asset) => <ReferenceTile key={asset.id} asset={asset} bust={bust} onRemove={() => void remove("reference", asset.id)} />)}
+        {kit.assets.references.length < 4 && <button onClick={() => referenceInput.current?.click()} disabled={busy !== null} className="group flex aspect-[4/5] min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 text-white/35 transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-40">{busy === "reference" ? <CircleNotch size={19} className="animate-spin" /> : <UploadSimple size={19} weight="bold" />}<span className="px-2 text-center text-[10px] font-medium">Drop or add references</span></button>}
       </DropZone>
-      <input ref={identityInput} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" onChange={(event) => event.target.files?.[0] && void extractIdentity(event.target.files[0])} />
+      <input ref={referenceInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => void uploadReferences(event.target.files)} />
     </section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
@@ -237,17 +225,9 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       <TextField label="Additional production notes" value={kit.notes} onChange={(notes) => update({ notes })} placeholder="Anything else the team must preserve…" rows={4} />
     </section>
 
-    <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-      <SectionTitle icon={<Flask size={16} weight="duotone" />} title="Style references" detail="Optional. Drop up to four example images; they are passed to GPT Image 2 as look references alongside your identity." />
-      <DropZone accept={(file) => /^image\/(png|jpeg|webp)$/.test(file.type)} disabled={busy !== null} onFiles={(files) => void uploadReferences(files)} className="mt-4 grid grid-cols-2 gap-2 rounded-xl sm:grid-cols-5">
-        {kit.assets.references.map((asset) => <ReferenceTile key={asset.id} asset={asset} bust={bust} onRemove={() => void remove("reference", asset.id)} />)}
-        {kit.assets.references.length < 4 && <button onClick={() => referenceInput.current?.click()} disabled={busy !== null} className="group flex aspect-[4/5] min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 text-white/35 transition hover:border-cyan-300/40 hover:text-cyan-100 disabled:opacity-40">{busy === "reference" ? <CircleNotch size={19} className="animate-spin" /> : <UploadSimple size={19} weight="bold" />}<span className="px-2 text-center text-[10px] font-medium">Drop or add references</span></button>}
-      </DropZone>
-      <input ref={referenceInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => void uploadReferences(event.target.files)} />
-    </section>
 
     <div className="sticky bottom-0 z-10 -mx-5 flex items-center justify-between gap-3 border-t border-white/10 bg-[#080b12]/92 px-5 py-3 backdrop-blur-xl">
-      <div><p className={`text-[11px] ${message ? "text-cyan-100/75" : "text-white/35"}`}>{message || (connected ? "Stored privately in Vercel Blob" : "Connect Vercel Blob to save changes")}</p><p className="mt-0.5 text-[9px] text-white/25">Face, logo, identity, palette, voice, and references flow into production.</p></div>
+      <div><p className={`text-[11px] ${message ? "text-cyan-100/75" : "text-white/35"}`}>{message || (connected ? "Stored privately in Vercel Blob" : "Connect Vercel Blob to save changes")}</p><p className="mt-0.5 text-[9px] text-white/25">Face, logo, palette, voice, and references flow into production.</p></div>
       <button onClick={() => void save()} disabled={busy !== null || !connected} className="flex shrink-0 items-center gap-2 rounded-xl bg-fuchsia-300 px-4 py-2.5 text-xs font-semibold text-[#18051b] shadow-[0_0_28px_rgba(232,121,249,.18)] transition hover:bg-fuchsia-200 disabled:opacity-40">{busy === "save" ? <CircleNotch size={15} className="animate-spin" /> : <FloppyDisk size={15} weight="bold" />}Save brand system</button>
     </div>
   </div>;
