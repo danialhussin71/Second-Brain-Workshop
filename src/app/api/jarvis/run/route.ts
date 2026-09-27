@@ -543,6 +543,7 @@ async function runCarousel(
       // The identity/profile header strip is banned on every slide; anything
       // the art director says about one would fight that ban at render time.
       "styleBible must be a reusable visual system derived from the uploaded brand guidance: palette, typography character, spacing, image treatment, and consistency rules. " +
+      "Colours come ONLY from the Brand Kit's LOCKED palette, by its exact hex values. Ignore any colour named in other second-brain notes, even brand notes; the Brand Kit palette always wins. " +
       "Slides have NO header strip. Never describe an identity header, profile row, avatar, name plate, handle, tagline, repost mark, or any bar or band across the top of a slide — do not add one, even if the brand references show one. " +
       "grounding may contain only exact titles of supplied second-brain notes.\n\n" +
       (guide ? `AUTHORITATIVE CAROUSEL/CHEATSHEET PLAYBOOK — follow every applicable rule:\n${guide.body}` : ""),
@@ -815,6 +816,7 @@ async function runPicturePost(
     instructions:
       "You are the founder's senior social art director and caption writer. Design one finished single-image post. " +
       `Choose the best style preset for the message from: ${styleList}. Choose aspect square, portrait, or landscape to fit the platform. ` +
+      "Colours come ONLY from the Brand Kit's LOCKED palette, by its exact hex values. Ignore any colour named in other second-brain notes, even brand notes; the Brand Kit palette always wins. " +
       "concept is one vivid sentence describing the visual. image_prompt is a complete, self-contained prompt for a photorealistic image model: describe subject, setting, lighting, mood, and composition. Do not ask it to leave space for overlays. " +
       "The founder's real portrait, logo, and brand references from the brand kit are supplied to the image model automatically, so when a person is central, write the subject as the real founder and rely on the identity lock. " +
       "Never include an identity header, profile row, avatar, name plate, handle, repost mark, or any strip or bar across the top of the image — even if the brand references show one. " +

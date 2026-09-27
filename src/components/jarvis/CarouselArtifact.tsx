@@ -273,7 +273,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
                   src={slide.image}
                   alt={slide.title}
                   draggable={false}
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                  className="pointer-events-none absolute inset-0 h-full w-full object-contain"
                 />
               ) : (
                 <div className="relative flex h-full flex-col items-center justify-center gap-4 overflow-hidden px-7 text-center">

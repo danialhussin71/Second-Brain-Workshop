@@ -4,11 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsClockwise, Check, CircleNotch, Copy, DownloadSimple, Image as ImageIcon, Palette, Warning } from "@phosphor-icons/react";
 import type { PicturePostArtifactData } from "@/lib/jarvis-events";
 import { CAROUSEL_QUALITY_KEY, normalizeCarouselQuality, type CarouselImageQuality } from "@/lib/carousel-settings";
-import { ASPECT_HINT, type PostAspect } from "@/lib/post-image";
+import { ASPECT_HINT, ASPECT_SIZE, type PostAspect } from "@/lib/post-image";
 import { DeliverableEyebrow } from "./DeliverableEyebrow";
 
 const ASPECTS: PostAspect[] = ["square", "portrait", "landscape"];
-const ASPECT_RATIO: Record<PostAspect, string> = { square: "1 / 1", portrait: "4 / 5", landscape: "1.91 / 1" };
+// The frame must match what GPT Image 2 actually renders (ASPECT_SIZE), not the
+// platform's nominal ratio — a 4:5 frame around a 2:3 render crops its edges.
+const ASPECT_RATIO = Object.fromEntries(
+  Object.entries(ASPECT_SIZE).map(([aspect, size]) => [aspect, size.replace("x", " / ")]),
+) as Record<PostAspect, string>;
 
 export default function PicturePostArtifact({ data }: { data: PicturePostArtifactData }) {
   const [aspect, setAspect] = useState<PostAspect>(data.aspect);
@@ -84,7 +88,7 @@ export default function PicturePostArtifact({ data }: { data: PicturePostArtifac
     <div className="p-4">
       {/* Image stage */}
       <div className="relative mx-auto overflow-hidden rounded-2xl border border-white/[.09] bg-black/40" style={{ aspectRatio: ASPECT_RATIO[aspect], maxWidth: aspect === "landscape" ? "100%" : aspect === "square" ? "420px" : "360px" }}>
-        {status === "ready" && image ? <img src={image} alt={data.concept} className="h-full w-full object-cover" /> : null}
+        {status === "ready" && image ? <img src={image} alt={data.concept} className="h-full w-full object-contain" /> : null}
         {status === "loading" ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#080a13]">
           <div className="relative"><CircleNotch size={30} className="animate-spin text-violet-300" /></div>
           <p className="text-[11px] text-white/45">Rendering with GPT Image 2…</p>

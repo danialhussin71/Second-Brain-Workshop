@@ -34,9 +34,6 @@ export type BrandKit = {
   headlineFont: string;
   bodyFont: string;
   typeHierarchy: string;
-  positioning: string;
-  audience: string;
-  personality: string;
   imagery: string;
   dos: string;
   donts: string;
@@ -82,9 +79,6 @@ export const DEFAULT_BRAND_KIT: BrandKit = {
   headlineFont: "",
   bodyFont: "",
   typeHierarchy: "",
-  positioning: "",
-  audience: "",
-  personality: "",
   imagery: "",
   dos: "",
   donts: "",
@@ -147,9 +141,6 @@ export function normalizeBrandKit(value: unknown, previous: BrandKit = DEFAULT_B
     headlineFont: cleanText(raw.headlineFont, previous.headlineFont, 300),
     bodyFont: cleanText(raw.bodyFont, previous.bodyFont, 300),
     typeHierarchy: cleanText(raw.typeHierarchy, previous.typeHierarchy, 4_000),
-    positioning: cleanText(raw.positioning, previous.positioning, 4_000),
-    audience: cleanText(raw.audience, previous.audience, 4_000),
-    personality: cleanText(raw.personality, previous.personality, 4_000),
     imagery: cleanText(raw.imagery, previous.imagery, 8_000),
     dos: cleanText(raw.dos, previous.dos, 8_000),
     donts: cleanText(raw.donts, previous.donts, 8_000),
@@ -352,6 +343,23 @@ export function stripBorrowedContent(spec: string): string {
     .join("\n\n");
 }
 
+/**
+ * The hard colour lock for image prompts. The Brand Studio palette is the one
+ * place a founder changes colours, so it must beat every other source — notes
+ * in the second brain, the art director's style bible, the learned spec, and
+ * style references all mention colours, and any of them could otherwise win.
+ */
+export function paletteLock(kit: BrandKit): string {
+  const colors = kit.colors.filter((color) => /^#[0-9A-F]{6}$/i.test(color.hex));
+  if (!colors.length) return "";
+  const list = colors.map((color) => {
+    const role = color.role ? `, ${color.role}` : "";
+    const usage = color.usage ? ` — ${color.usage}` : "";
+    return `${color.name} ${color.hex.toUpperCase()}${role}${usage}`;
+  }).join("; ");
+  return `LOCKED COLOUR PALETTE — use ONLY these colours: ${list}. Every designed colour — backgrounds, gradients, glows, text, highlights, shapes, icons, buttons and graphic accents — must come from this palette. It overrides every other colour mentioned anywhere in this prompt, including the style bible, the locked visual system, the second brain, and whatever colours a style reference uses; if any of them names a different colour, ignore it and use the closest palette colour instead. Only photographic subjects (skin, hair, clothing, real objects) keep their natural colours.`;
+}
+
 export function brandKitContext(kit: BrandKit): string {
   // Neither borrowed content nor the reference's identity/profile header strip
   // is ever wanted, in any format, so both are scrubbed unconditionally.
@@ -369,16 +377,13 @@ export function brandKitContext(kit: BrandKit): string {
   // Only emit fields the founder has actually set, so an unconfigured kit stays
   // minimal and agents fall back to the second brain's Voice DNA instead of
   // empty labels.
-  const configured = kit.displayName || kit.voice || styleSpec || kit.tagline || kit.positioning;
+  const configured = kit.displayName || kit.voice || styleSpec || kit.tagline;
   return [
     `# Brand Kit: ${kit.displayName || "Not configured yet"}`,
     kit.handle ? `Handle: @${kit.handle}` : "",
     kit.tagline ? `Tagline: ${kit.tagline}` : "",
     kit.website ? `Website: ${kit.website}` : "",
-    kit.positioning ? `Positioning: ${kit.positioning}` : "",
-    kit.audience ? `Audience: ${kit.audience}` : "",
-    kit.personality ? `Brand personality: ${kit.personality}` : "",
-    palette ? `Palette:\n${palette}` : "",
+    palette ? `Palette (LOCKED — set in Brand Studio; overrides any colour named in the second brain, notes or references):\n${palette}` : "",
     kit.headlineFont ? `Headline typography: ${kit.headlineFont}` : "",
     kit.bodyFont ? `Body typography: ${kit.bodyFont}` : "",
     kit.typeHierarchy ? `Type hierarchy:\n${kit.typeHierarchy}` : "",

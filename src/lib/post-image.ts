@@ -102,6 +102,8 @@ export function buildPostImagePrompt(args: {
   brandContext?: string;
   hasFace?: boolean;
   referenceRoles?: string[];
+  /** The Brand Studio palette as a hard lock (see paletteLock in brand-kit). */
+  paletteLock?: string;
 }): string {
   const style = resolveStyle(args.styleKey);
   const parts: string[] = [style.prompt];
@@ -121,6 +123,7 @@ export function buildPostImagePrompt(args: {
   if (args.brandContext?.trim()) {
     parts.push(`AUTHORITATIVE BRAND KIT — weave its palette, typography character, and mood into the image naturally:\n${args.brandContext.trim()}`);
   }
+  if (args.paletteLock) parts.push(args.paletteLock);
   if (args.referenceRoles?.length) {
     parts.push(
       `Reference image legend, in upload order: ${args.referenceRoles.join("; ")}. Reproduce any real logo accurately.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, treatment and finish — the look. Take NOTHING it says or is about: its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear here in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone. Ignore any profile/identity strip along the top of a style reference entirely — never reproduce it.`,
@@ -130,6 +133,9 @@ export function buildPostImagePrompt(args: {
 
   parts.push(PHOTOREALISM);
   parts.push(NEGATIVE_GUARDRAILS);
+  if (args.paletteLock) {
+    parts.push("FINAL CHECK — every designed colour in this image comes from the LOCKED COLOUR PALETTE above. No colour from the scene description, the second brain or a style reference that is not in that palette.");
+  }
   // Restated last so recency reinforces it against the references.
   parts.push("FINAL CHECK — there is NO header strip at the top of this image: no profile row, no avatar, no circular photo, no name, no handle, no repost mark, no top bar or banner. Even if every style reference has one, this image does not.");
   return parts.join("\n\n");

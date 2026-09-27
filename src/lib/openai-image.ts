@@ -57,6 +57,8 @@ export function carouselSlidePrompt(args: {
   topic: string;
   brandContext?: string;
   referenceRoles?: string[];
+  /** The Brand Studio palette as a hard lock (see paletteLock). */
+  paletteLock?: string;
 }): string {
   const role = args.index === 1 ? "cover" : args.index === args.total ? "closing" : "body";
   // Scrub here rather than at the call site: the header ban only holds if
@@ -72,6 +74,7 @@ export function carouselSlidePrompt(args: {
     `This is a ${role} slide.`,
     "NO HEADER STRIP: do not put any identity header, profile row, or top strip on this slide. No avatar or circular portrait, no name, no handle, no tagline, no repost mark, no bar, band or banner across the top. The slide starts directly with its own content — use the full canvas for the headline and visual.",
     args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
+    args.paletteLock || "",
     args.referenceRoles?.length
       ? `REFERENCE IMAGE LEGEND, in upload order: ${args.referenceRoles.join("; ")}. Preserve the founder's facial identity and the real logo.\nA style reference is a SWATCH, NOT A SOURCE. Take from it only palette, typography, hierarchy, spacing and finish — the look. Take NOTHING it says or is about. Its words, headlines, labels, dates, times, prices, links, QR codes, calls to action, offers, event or product details, and depicted subject matter belong to a different message and must not appear on this slide in any form, altered or verbatim. If a style reference is a poster, flyer, ad or announcement, it is here for its craft alone; this slide is about ${args.topic} and nothing else. The only words on this slide are the headline and supporting copy given above. If a style reference has an identity/profile strip along its top (avatar, name, handle, tagline, repost mark), do NOT copy it — that strip is banned here.`
       : "",
@@ -86,6 +89,9 @@ export function carouselSlidePrompt(args: {
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",
     // Restated last: the two constraints references push hardest against, in the
     // plain prohibition form that measurably suppresses stray text/marks.
+    args.paletteLock
+      ? "FINAL CHECK — every designed colour on this slide comes from the LOCKED COLOUR PALETTE above. No colour from the style bible, the second brain or a style reference that is not in that palette."
+      : "",
     args.referenceRoles?.length
       ? "FINAL CHECK — the only words rendered anywhere on this slide are the headline and supporting copy quoted above. No date, no time, no price, no link, no QR code, no button label, no registration or event line, no borrowed slogan, no extra sentence. Whatever a style reference happens to show, none of its wording reaches this slide."
       : "",

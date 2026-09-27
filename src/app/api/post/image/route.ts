@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeCarouselQuality } from "@/lib/carousel-settings";
 import { generateImage, imageModelConfigured } from "@/lib/openai-image";
-import { brandKitContext, getBrandKit, loadBrandReferenceImages } from "@/lib/brand-kit";
+import { brandKitContext, getBrandKit, loadBrandReferenceImages, paletteLock } from "@/lib/brand-kit";
 import { ASPECT_SIZE, buildPostImagePrompt, isStyleKey, type PostAspect } from "@/lib/post-image";
 
 export const runtime = "nodejs";
@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       aspect,
       onImageText: payload.on_image_text,
       brandContext: brandKitContext(brand),
+      paletteLock: paletteLock(brand),
       hasFace,
       referenceRoles: references.map((reference, index) => `reference ${index + 1} = ${reference.role}`),
     });

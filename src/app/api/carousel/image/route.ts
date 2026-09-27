@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeCarouselQuality } from "@/lib/carousel-settings";
 import { carouselSlidePrompt, generateImage, imageModelConfigured } from "@/lib/openai-image";
-import { brandKitContext, getBrandKit, loadBrandReferenceImages } from "@/lib/brand-kit";
+import { brandKitContext, getBrandKit, loadBrandReferenceImages, paletteLock } from "@/lib/brand-kit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       styleBible: payload.styleBible || "",
       topic: payload.topic || slide.title,
       brandContext: brandKitContext(brand),
+      paletteLock: paletteLock(brand),
       referenceRoles: brandReferences.map((reference, index) => `reference ${index + 1} = ${reference.role}`),
     }), { quality, size: "1088x1360", references: brandReferences.map(({ data, name, type }) => ({ data, name, type })) });
     if (!image) return NextResponse.json({ error: "GPT Image 2 returned no image." }, { status: 502 });

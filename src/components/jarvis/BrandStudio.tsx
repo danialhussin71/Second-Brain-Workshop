@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleNotch,
-  Compass,
   Fingerprint,
   Flask,
   FloppyDisk,
@@ -177,14 +176,6 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       <input ref={referenceInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => void uploadReferences(event.target.files)} />
     </section>
 
-    <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-      <SectionTitle icon={<Compass size={16} weight="duotone" />} title="Positioning and personality" detail="Who the brand serves and how it must be perceived. Shapes every visual and written decision." />
-      <div className="mt-0 grid gap-x-3 sm:grid-cols-2">
-        <TextField label="Positioning" value={kit.positioning} onChange={(positioning) => update({ positioning })} placeholder="What you sell, to whom, and the space you own…" rows={4} />
-        <TextField label="Audience" value={kit.audience} onChange={(audience) => update({ audience })} placeholder="Your ideal customer and what they need to feel…" rows={4} />
-      </div>
-      <TextField label="Personality" value={kit.personality} onChange={(personality) => update({ personality })} placeholder="Perception words, and the looks and clichés to never resemble…" rows={3} />
-    </section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
       <SectionTitle icon={<Signature size={16} weight="duotone" />} title="Brand identity" detail="The recurring signature shown across every deliverable." />
