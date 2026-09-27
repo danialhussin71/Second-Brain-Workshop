@@ -2,8 +2,6 @@ import { blobConfigured, blobDel, blobGetBytes, blobGetText, blobPutBytes, blobP
 
 export const BRAND_KIT_PATH = "owner/brand/kit.json";
 const BRAND_ASSET_PREFIX = "owner/brand/assets";
-/** The pre-rendered locked carousel header (rendered client-side at kit save). */
-export const BRAND_HEADER_PATH = "owner/brand/assets/locked-header.png";
 
 export type BrandColor = {
   id: string;

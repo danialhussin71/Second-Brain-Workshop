@@ -544,6 +544,8 @@ async function runCarousel(
       // the art director says about one would fight that ban at render time.
       "styleBible must be a reusable visual system derived from the uploaded brand guidance: palette, typography character, spacing, image treatment, and consistency rules. " +
       "Colours come ONLY from the Brand Kit's LOCKED palette, by its exact hex values. Ignore any colour named in other second-brain notes, even brand notes; the Brand Kit palette always wins. " +
+      "The FIRST and LAST slides must feature the founder's portrait — the real founder photo is supplied to the image model, so write their visual direction around a large portrait or cutout of the founder. " +
+      "Slides have NO header strip and no empty space reserved at the top; headlines start at the top margin. " +
       "Slides have NO header strip. Never describe an identity header, profile row, avatar, name plate, handle, tagline, repost mark, or any bar or band across the top of a slide — do not add one, even if the brand references show one. " +
       "grounding may contain only exact titles of supplied second-brain notes.\n\n" +
       (guide ? `AUTHORITATIVE CAROUSEL/CHEATSHEET PLAYBOOK — follow every applicable rule:\n${guide.body}` : ""),

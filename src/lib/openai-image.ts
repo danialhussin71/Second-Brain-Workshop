@@ -61,6 +61,8 @@ export function carouselSlidePrompt(args: {
   paletteLock?: string;
 }): string {
   const role = args.index === 1 ? "cover" : args.index === args.total ? "closing" : "body";
+  const hasFace = Boolean(args.referenceRoles?.some((item) => item.includes("founder-face")));
+  const portraitSlide = hasFace && (role === "cover" || role === "closing");
   // Scrub here rather than at the call site: the header ban only holds if
   // NOTHING else in the prompt asks for a header, so no caller may opt out.
   // The art director reads the kit's learned spec, so borrowed content can reach
@@ -73,6 +75,7 @@ export function carouselSlidePrompt(args: {
     `Create slide ${args.index} of ${args.total} for a premium 4:5 LinkedIn carousel about ${args.topic}.`,
     `This is a ${role} slide.`,
     "NO HEADER STRIP: do not put any identity header, profile row, or top strip on this slide. No avatar or circular portrait, no name, no handle, no tagline, no repost mark, no bar, band or banner across the top. The slide starts directly with its own content — use the full canvas for the headline and visual.",
+    "NO EMPTY TOP BAND: the headline begins at the normal top safe margin, about 6–8% from the top edge. Do not leave an empty band, blank margin or unused space across the top of the slide. If the style bible or locked visual system places the headline lower (for example \"in the upper 18 to 28 percent\") or reserves space for a header, ignore that — it was written for a header that no longer exists.",
     args.brandContext ? `AUTHORITATIVE BRAND KIT — follow it exactly:\n${args.brandContext}` : "",
     args.paletteLock || "",
     args.referenceRoles?.length
@@ -82,9 +85,11 @@ export function carouselSlidePrompt(args: {
     `Art direction for this slide: ${args.art || "editorial visual metaphor with restrained detail"}.`,
     `Locked visual system for the entire deck: ${styleBible || "dark editorial background, crisp modern typography, restrained cyan and violet accents, generous spacing"}.`,
     "Maintain safe margins, strong typographic hierarchy, extremely legible text, and visual continuity with every other slide.",
-    role === "cover" || role === "closing"
-      ? "If a founder-face reference is attached, use that exact person as a polished photorealistic cutout or portrait. Do not alter identity, age, ethnicity, or facial structure."
-      : "Keep the founder's face out of this slide unless the art direction explicitly calls for it. Never use it as a small avatar.",
+    portraitSlide
+      ? `FOUNDER PORTRAIT REQUIRED: this ${role} slide MUST feature the founder from the founder-face reference as a large, prominent photorealistic portrait or cutout — a hero element of the composition, never a small avatar. Use that exact person. Do not alter identity, age, ethnicity, or facial structure.`
+      : role === "cover" || role === "closing"
+        ? "Compose a strong hero visual for this slide."
+        : "Keep the founder's face out of this slide unless the art direction explicitly calls for it. Never use it as a small avatar.",
     "If a brand-logo reference is attached, reproduce it accurately and do not redesign it.",
     "No generic AI watermark. No mockup frame around the slide. Output the finished slide artwork only.",
     // Restated last: the two constraints references push hardest against, in the
@@ -95,6 +100,9 @@ export function carouselSlidePrompt(args: {
     args.referenceRoles?.length
       ? "FINAL CHECK — the only words rendered anywhere on this slide are the headline and supporting copy quoted above. No date, no time, no price, no link, no QR code, no button label, no registration or event line, no borrowed slogan, no extra sentence. Whatever a style reference happens to show, none of its wording reaches this slide."
       : "",
-    "FINAL CHECK — there is NO header strip at the top of this slide: no profile row, no avatar, no circular photo, no name, no handle, no tagline, no repost mark, no top bar, band or banner. Even if every style reference has one, this slide does not.",
+    portraitSlide
+      ? "FINAL CHECK — the founder's large photorealistic portrait is on this slide, matching the founder-face reference exactly."
+      : "",
+    "FINAL CHECK — there is NO header strip at the top of this slide and no empty band above the headline: no profile row, no avatar, no circular photo, no name, no handle, no tagline, no repost mark, no top bar, band or banner. Even if every style reference has one, this slide does not.",
   ].filter(Boolean).join("\n\n");
 }

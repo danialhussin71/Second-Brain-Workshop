@@ -231,7 +231,7 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
 
   /* ----- the cinematic slide stage ----- */
   const stage = (large: boolean) => (
-    <div className={cn("relative flex min-h-0 flex-1 flex-col items-center gap-3.5 bg-white", large ? "px-6 py-5" : "px-3 py-4")} style={{ perspective: 1600 }}>
+    <div className={cn("relative flex flex-col items-center gap-3.5 bg-white", large ? "min-h-0 flex-1 px-6 py-5" : "h-[min(660px,78vh)] shrink-0 px-3 py-4")} style={{ perspective: 1600 }}>
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
         <NavButton side="left" onClick={() => go(-1)} disabled={i === 0} />
 
@@ -387,8 +387,8 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
 
   /* ----- caption dock ----- */
   const caption = (
-    <div className="shrink-0 border-t border-white/8 px-4 py-2">
-      <div className="mb-1 flex items-center justify-between">
+    <div className="shrink-0 border-t border-white/8 px-4 pb-5 pt-3">
+      <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.16em] text-white/40">
           <span className="h-1 w-1 rounded-full" style={{ background: accent }} />
           Post caption
@@ -408,16 +408,16 @@ export default function CarouselArtifact({ data }: { data: CarouselArtifactData 
           </motion.button>
         </div>
       </div>
-      <p data-lenis-prevent className="max-h-[48px] overflow-y-auto whitespace-pre-line text-[12px] leading-relaxed text-white/60">
+      <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-white/75">
         {data.caption}
       </p>
     </div>
   );
 
   return (
-    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 220, damping: 26 }} className="flex h-full flex-col">
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 220, damping: 26 }} data-lenis-prevent className="flex h-full flex-col overflow-y-auto">
       {/* header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 py-2">
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[#060811]/90 px-4 py-2 backdrop-blur">
         <div className="min-w-0">
           <DeliverableEyebrow />
           <div className="mt-0.5 truncate text-[13px] font-semibold tracking-tight text-white">{data.topic}</div>

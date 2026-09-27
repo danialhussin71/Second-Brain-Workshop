@@ -27,7 +27,7 @@ const esc = (s: string) =>
 
 const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
-/** The kit's accent colour, resolved the same way the carousel header resolves it. */
+/** The kit's accent colour, matched by name, falling back to the first colour. */
 export function newsletterAccent(kit: BrandKit | null): string {
   const named = kit?.colors.find((c) => /accent|primary|brand/i.test(c.name) && /^#[0-9A-F]{6}$/i.test(c.hex))?.hex;
   return named || kit?.colors[0]?.hex || "#5B677A";
