@@ -54,6 +54,26 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
   useEffect(() => { void load(); }, []);
 
   const update = (patch: Partial<BrandKit>) => setKit((current) => current ? { ...current, ...patch } : current);
+  // Uploads and "learn from references" return the kit as stored on the
+  // server, which lacks anything typed since the last save. Replacing the form
+  // with it wiped unsaved edits (name, handle, tagline…), so take only the
+  // parts each action actually changed.
+  const mergeAssets = (server: BrandKit) => setKit((current) => current ? { ...current, assets: server.assets } : server);
+  const mergeLearned = (server: BrandKit) => setKit((current) => current ? {
+    ...current,
+    // The extract keeps the stored accent; a locally changed one wins.
+    colors: [current.colors[0], ...server.colors.slice(1)],
+    headlineFont: server.headlineFont,
+    bodyFont: server.bodyFont,
+    typeHierarchy: server.typeHierarchy,
+    imagery: server.imagery,
+    dos: server.dos,
+    donts: server.donts,
+    voice: server.voice,
+    vocabulary: server.vocabulary,
+    avoid: server.avoid,
+    styleSpec: server.styleSpec,
+  } : server);
   const readiness = useMemo(() => {
     if (!kit) return { score: 0, done: 0, total: 8 };
     const checks = [kit.displayName, kit.tagline, kit.colors.length >= 5, kit.headlineFont, kit.bodyFont, kit.voice, kit.assets.face, kit.assets.references.length];
@@ -94,7 +114,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       const response = await fetch("/api/brand/asset", { method: "POST", body: form });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Upload failed.");
-      setKit(data.kit);
+      mergeAssets(data.kit);
       setBust((value) => value + 1);
       notify(kind === "reference" ? "Style reference added." : `${kind === "face" ? "Founder face" : "Logo"} updated.`);
     } catch (error) {
@@ -116,7 +136,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       const response = await fetch("/api/brand/asset", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, id }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not remove asset.");
-      setKit(data.kit);
+      mergeAssets(data.kit);
       setBust((value) => value + 1);
       notify("Brand asset removed.");
     } catch (error) {
@@ -133,7 +153,7 @@ export default function BrandStudio({ onSaved }: { onSaved?: (message: string) =
       const response = await fetch("/api/brand/extract", { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Analysis failed.");
-      setKit(data.kit);
+      mergeLearned(data.kit);
       notify(`Visual system learned from ${data.analyzed} reference${data.analyzed === 1 ? "" : "s"}. Review and save when ready.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Analysis failed.");
